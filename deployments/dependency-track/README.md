@@ -100,7 +100,7 @@ For local experiments outside GitHub Actions, use the frontend at `http://localh
 
 If you want to validate the local stack before wiring it to a real GitHub Actions run, warm it up with the sample app and image SBOMs.
 
-Expected project names:
+Expected project names. These match CI defaults:
 
 - `devsecops-pipeline-sample`
 - `devsecops-pipeline-sample-image`

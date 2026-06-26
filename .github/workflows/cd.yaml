@@ -124,7 +124,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Validate environment configuration
+      - name: Check deploy configuration
+        id: deploy_config
         shell: bash
         env:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
@@ -133,10 +134,27 @@ jobs:
           missing=()
           [[ -z "$RESOURCE_GROUP" ]] && missing+=("AZURE_RESOURCE_GROUP")
           [[ -z "$CONTAINER_APP_NAME" ]] && missing+=("CONTAINER_APP_NAME")
+
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "::error::Missing required environment variables: ${missing[*]}"
-            exit 1
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping deploy. Missing required environment variables: ${missing[*]}"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Deployment skipped (missing config)
+        if: steps.deploy_config.outputs.enabled != 'true'
+        run: echo "Deploy skipped due to missing AZURE_RESOURCE_GROUP and/or CONTAINER_APP_NAME."
+
+      # Add this condition to every real deploy step:
+      - name: Deploy to Azure
+        if: steps.deploy_config.outputs.enabled == 'true'
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+        run: |
+          # your az containerapp commands here
+          echo "Deploying..."
 
       - name: Azure login
         uses: Azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0

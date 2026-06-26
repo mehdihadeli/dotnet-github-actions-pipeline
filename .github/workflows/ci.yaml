@@ -47,7 +47,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   HUSKY: 0
-  APP_SBOM_PROJECT_NAME: DevSecOpsPipelineSample
+  APP_SBOM_PROJECT_NAME: devsecops-pipeline-sample
   REGISTRY: ghcr.io
   IMAGE_TAR_PATH: image.tar.gz
   TRIVY_FAIL_SEVERITY: CRITICAL,HIGH
