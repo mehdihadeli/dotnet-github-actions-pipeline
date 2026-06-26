@@ -131,10 +131,9 @@ jobs:
             -w /src \
             semgrep/semgrep:latest \
             semgrep scan \
-            --config auto \
+            --config p/security-audit \
             --error \
-            --verbose \
-            --metrics=auto \
+            --metrics=off \
             --exclude .git \
             --exclude artifacts \
             --exclude tests \
