@@ -17,7 +17,7 @@
     },
     {
       "name": "style",
-      "group": "pre-push",
+      "group": "pre-commit",
       "command": "dotnet",
       "args": ["tool", "run", "csharpier", "check", "."],
       "include": [
@@ -32,7 +32,7 @@
     },
     {
       "name": "analyzers",
-      "group": "pre-push",
+      "group": "pre-commit",
       "command": "dotnet",
       "args": [
         "format",
@@ -52,7 +52,7 @@
     },
     {
       "name": "build",
-      "group": "pre-push",
+      "group": "pre-commit",
       "command": "dotnet",
       "args": [
         "build",
@@ -74,7 +74,6 @@
     },
     {
       "name": "test",
-      "group": "pre-push",
       "command": "dotnet",
       "args": [
         "test",

@@ -20,5 +20,4 @@
 #echo 'Husky.Net is awesome!'
 
 echo "Running Husky pre-commit tasks..."
-
-dotnet husky run
+dotnet tool run husky -- run --group pre-commit
