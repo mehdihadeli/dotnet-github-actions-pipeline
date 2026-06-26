@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  dtrack-apiserver:
+    image: dependencytrack/apiserver:latest
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      trivy:
+        condition: service_started
+    environment:
+      ALPINE_DATABASE_MODE: external
+      ALPINE_DATABASE_URL: jdbc:postgresql://postgres-db:5432/${POSTGRES_DB}
+      ALPINE_DATABASE_DRIVER: org.postgresql.Driver
+      ALPINE_DATABASE_USERNAME: ${POSTGRES_USERNAME}
+      ALPINE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      ALPINE_CORS_ENABLED: "true"
+      ALPINE_CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN}
+    ports:
+      - "8081:8080"
+    volumes:
+      - dependency-track-data:/data
+    restart: unless-stopped
+
+  dtrack-frontend:
+    image: dependencytrack/frontend:latest
+    depends_on:
+      - dtrack-apiserver
+    environment:
+      API_BASE_URL: http://localhost:8081
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  trivy:
+    image: aquasec/trivy:latest
+    command:
+      - server
+      - --listen
+      - 0.0.0.0:8080
+      - --token
+      - ${TRIVY_SERVER_TOKEN}
+    ports:
+      - "4954:8080"
+    volumes:
+      - trivy-cache:/root/.cache/trivy
+    restart: unless-stopped
+
+  dtrack-bootstrap:
+    image: curlimages/curl:8.14.1
+    depends_on:
+      dtrack-apiserver:
+        condition: service_started
+      trivy:
+        condition: service_started
+    environment:
+      DT_API_BASE_URL: http://dtrack-apiserver:8080
+      DEPENDENCY_TRACK_API_KEY: ${DEPENDENCY_TRACK_API_KEY:-}
+      TRIVY_BASE_URL: http://trivy:8080
+      TRIVY_SERVER_TOKEN: ${TRIVY_SERVER_TOKEN}
+      TRIVY_IGNORE_UNFIXED: ${TRIVY_IGNORE_UNFIXED:-false}
+    volumes:
+      - ./bootstrap-trivy.sh:/bootstrap-trivy.sh:ro
+    entrypoint: ["/bin/sh", "/bootstrap-trivy.sh"]
+    restart: "no"
+
+  postgres-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres-data:
+  dependency-track-data:
+  trivy-cache:

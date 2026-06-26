@@ -1,6 +1,6 @@
 # DevSecOps .NET GitHub Actions Sample
 
-Sample shows repo-local composite actions plus one `ci-cd.yaml` workflow for a .NET backend DevSecOps pipeline.
+Sample shows repo-local composite actions plus split `ci.yaml` and `cd.yaml` workflows for a .NET backend DevSecOps pipeline.
 
 ## Structure
 
@@ -11,7 +11,10 @@ Sample shows repo-local composite actions plus one `ci-cd.yaml` workflow for a .
 - `.github/actions/build`: build solution in Release mode
 - `.github/actions/test`: run tests, TRX, and XPlat coverage
 - `.github/actions/publish`: build and optionally push Docker image
-- `.github/workflows/ci-cd.yaml`: single workflow for CI, IaC checks, app and image scanning, Cosign signing, attestation, optional Azure deployment, and staged DAST
+- `.github/actions/upload-dependency-track-bom`: reusable CycloneDX BOM upload action for Dependency-Track
+- `.github/workflows/ci.yaml`: CI workflow for quality, SAST, app and image SCA, BOM upload, signing, and attestation
+- `.github/workflows/cd.yaml`: CD workflow for deployment, post-deploy verification, and ZAP
+- `deployments/dependency-track`: local Dependency-Track + PostgreSQL + Trivy server stack with optional API bootstrap script
 
 ## Pipeline stages
 
@@ -40,6 +43,28 @@ Sample shows repo-local composite actions plus one `ci-cd.yaml` workflow for a .
 - Snyk image SARIF uploads to GitHub Security tab when `SNYK_TOKEN` is configured
 - CodeQL, Semgrep, Trivy, and Grype all surface findings in GitHub code scanning; Semgrep and Trivy remain the blocking CI gates in this sample
 
+## Dependency-Track BOM uploads
+
+The sample uploads both generated CycloneDX BOMs to Dependency-Track through the reusable action at `.github/actions/upload-dependency-track-bom/action.yml`.
+
+Exact CI call sites:
+
+- `dotnet-app-sca-security -> Upload app SBOM to Dependency-Track`
+- `image-sca-security -> Upload image SBOM to Dependency-Track`
+
+Exact payloads:
+
+- app BOM file: `artifacts/sbom/app/bom.json`
+- app project name: `${APP_SBOM_PROJECT_NAME}`
+- app project version: `${github.sha}`
+- image BOM file: `artifacts/sbom/image/image.cdx.json`
+- image project name: `${APP_SBOM_PROJECT_NAME}-image`
+- image project version: `${github.sha}`
+
+Both uploads are gated only by whether `DEPENDENCY_TRACK_URL` and `DEPENDENCY_TRACK_API_KEY` are configured. If either one is missing, the action logs a skip and CI continues.
+
+For local Dependency-Track experiments, see `deployments/dependency-track/`.
+
 ## Local validation
 
 ```bash
@@ -64,13 +89,12 @@ dotnet husky install
 
 ## GitHub secrets
 
-`ci-cd.yaml` publish step expects:
+`ci.yaml` publish step expects:
 
 - `GHCR_TOKEN`
 
-`ci-cd.yaml` deployment expects:
+`cd.yaml` deployment expects:
 
-- `GHCR_TOKEN`
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
@@ -88,14 +112,14 @@ Optional integration secrets:
 
 Cosign keyless signing uses GitHub OIDC and does not require a private signing key secret.
 
-## Azure deploy inputs
+## Azure deploy configuration
 
-Deployment workflow updates existing Azure Container App. Provide:
+CD workflow updates an existing Azure Container App by reading GitHub environment-scoped configuration. Provide:
 
-- environment name
-- resource group
-- container app name
-- optional staged API URL override if ZAP should scan a specific public endpoint instead of resolved Container App ingress URL
+- environment names such as `dev` and `prod`
+- `AZURE_RESOURCE_GROUP`
+- `CONTAINER_APP_NAME`
+- optional `STAGED_API_URL` override if ZAP should scan a specific public endpoint instead of resolved Container App ingress URL
 
 This sample keeps deployment generic on purpose. It demonstrates reusable workflow shape and local composite action layout without hard-coding project-specific infrastructure.
 
