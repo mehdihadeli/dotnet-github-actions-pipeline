@@ -22,4 +22,6 @@ runs:
 
   - name: Run Roslyn analyzers
     shell: bash
-    run: dotnet build "${{ inputs.solution-path }}" -c Release --no-restore /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
+    env:
+      SOLUTION_PATH: ${{ inputs.solution-path }}
+    run: dotnet build "$SOLUTION_PATH" -c Release --no-restore /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true

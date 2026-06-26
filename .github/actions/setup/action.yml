@@ -25,4 +25,6 @@ runs:
 
   - name: Restore solution
     shell: bash
-    run: dotnet restore "${{ inputs.solution-path }}"
+    env:
+      SOLUTION_PATH: ${{ inputs.solution-path }}
+    run: dotnet restore "$SOLUTION_PATH"

@@ -26,9 +26,14 @@ runs:
 
   - name: Build for tests
     shell: bash
-    run: dotnet build "${{ inputs.solution-path }}" -c Release --no-restore
+    env:
+      SOLUTION_PATH: ${{ inputs.solution-path }}
+    run: dotnet build "$SOLUTION_PATH" -c Release --no-restore
 
   - name: Run tests
     shell: bash
+    env:
+      SOLUTION_PATH: ${{ inputs.solution-path }}
+      RESULTS_DIRECTORY: ${{ inputs.results-directory }}
     run: >-
-      dotnet test "${{ inputs.solution-path }}" -c Release --no-build --logger trx --results-directory "${{ inputs.results-directory }}" --collect:"XPlat Code Coverage"
+      dotnet test "$SOLUTION_PATH" -c Release --no-build --logger trx --results-directory "$RESULTS_DIRECTORY" --collect:"XPlat Code Coverage"

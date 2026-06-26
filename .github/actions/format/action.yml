@@ -22,4 +22,6 @@ runs:
 
   - name: Verify formatting
     shell: bash
-    run: dotnet format "${{ inputs.solution-path }}" --verify-no-changes --severity error
+    env:
+      SOLUTION_PATH: ${{ inputs.solution-path }}
+    run: dotnet format "$SOLUTION_PATH" --verify-no-changes --severity error

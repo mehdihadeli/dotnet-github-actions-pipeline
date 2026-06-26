@@ -22,4 +22,6 @@ runs:
 
   - name: Validate style warnings
     shell: bash
-    run: dotnet build "${{ inputs.solution-path }}" -c Release --no-restore /warnaserror
+    env:
+      SOLUTION_PATH: ${{ inputs.solution-path }}
+    run: dotnet build "$SOLUTION_PATH" -c Release --no-restore /warnaserror
