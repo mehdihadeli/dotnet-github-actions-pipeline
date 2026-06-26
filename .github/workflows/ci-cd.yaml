@@ -281,10 +281,11 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+          SONAR_HOST_URL: ${{ steps.sonar_config.outputs.host_url }}
         run: |
           args=(
             "/k:${SONAR_PROJECT_KEY}"
-            "/d:sonar.host.url=${{ steps.sonar_config.outputs.host_url }}"
+            "/d:sonar.host.url=${SONAR_HOST_URL}"
             "/d:sonar.token=${SONAR_TOKEN}"
             "/d:sonar.qualitygate.wait=true"
             "/d:sonar.scm.provider=git"
@@ -478,9 +479,11 @@ jobs:
       - name: Fail on Snyk app findings
         if: always() && steps.snyk_app_scan.outputs.enabled == 'true' && steps.snyk_app_scan.outputs.status != '0'
         shell: bash
+        env:
+          SNYK_APP_STATUS: ${{ steps.snyk_app_scan.outputs.status }}
         run: |
           echo "::error::Snyk app scan found high or critical vulnerabilities."
-          exit "${{ steps.snyk_app_scan.outputs.status }}"
+          exit "$SNYK_APP_STATUS"
 
       - name: Upload app SBOM to Dependency-Track
         if: always()
@@ -589,10 +592,14 @@ jobs:
       - name: Expose image metadata
         id: image_meta
         shell: bash
+        env:
+          IMAGE_NAME: ${{ needs.image-build.outputs.image-name }}
+          IMAGE_REF: ${{ needs.image-build.outputs.image-ref }}
+          IMAGE_TAG: ${{ needs.image-build.outputs.image-tag }}
         run: |
-          echo "image_name=${{ needs.image-build.outputs.image-name }}" >> "$GITHUB_OUTPUT"
-          echo "image_ref=${{ needs.image-build.outputs.image-ref }}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${{ needs.image-build.outputs.image-tag }}" >> "$GITHUB_OUTPUT"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
@@ -671,6 +678,7 @@ jobs:
         shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          IMAGE_REF: ${{ needs.image-build.outputs.image-ref }}
         run: |
           if [[ -z "${SNYK_TOKEN}" ]]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -681,7 +689,7 @@ jobs:
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
           set +e
-          snyk container test "${{ needs.image-build.outputs.image-ref }}" \
+          snyk container test "$IMAGE_REF" \
             --severity-threshold=high \
             --sarif-file-output=artifacts/security/snyk-image.sarif
           status=$?
@@ -698,9 +706,11 @@ jobs:
       - name: Fail on Snyk image findings
         if: always() && steps.snyk_image_scan.outputs.enabled == 'true' && steps.snyk_image_scan.outputs.status != '0'
         shell: bash
+        env:
+          SNYK_IMAGE_STATUS: ${{ steps.snyk_image_scan.outputs.status }}
         run: |
           echo "::error::Snyk image scan found high or critical vulnerabilities."
-          exit "${{ steps.snyk_image_scan.outputs.status }}"
+          exit "$SNYK_IMAGE_STATUS"
 
       - name: Upload image SBOM to Dependency-Track
         if: always()
@@ -747,11 +757,11 @@ jobs:
       - name: Evaluate security gate
         id: evaluate
         shell: bash
+        env:
+          APP_RESULT: ${{ needs.dotnet-app-sca-security.result }}
+          IMAGE_RESULT: ${{ needs.image-sca-security.result }}
         run: |
           mkdir -p reports
-
-          APP_RESULT="${{ needs.dotnet-app-sca-security.result }}"
-          IMAGE_RESULT="${{ needs.image-sca-security.result }}"
 
           if [[ "${APP_RESULT}" == "success" && "${IMAGE_RESULT}" == "success" ]]; then
             GATE_STATUS="PASS"
@@ -828,8 +838,9 @@ jobs:
       - name: Push image
         id: push
         shell: bash
+        env:
+          IMAGE_REF: ${{ needs.image-sca-security.outputs.image-ref }}
         run: |
-          IMAGE_REF="${{ needs.image-sca-security.outputs.image-ref }}"
           docker push "${IMAGE_REF}"
           IMAGE_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_REF}" | awk -F@ '{print $2}')"
           echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
@@ -887,10 +898,13 @@ jobs:
 
       - name: Attach image SBOM to published image
         shell: bash
+        env:
+          IMAGE_PUBLISH_REF: ${{ needs.image-publish.outputs.image-ref }}
+          IMAGE_PUBLISH_DIGEST: ${{ needs.image-publish.outputs.image-digest }}
         run: |
-          IMAGE_REPOSITORY="${{ needs.image-publish.outputs.image-ref }}"
+          IMAGE_REPOSITORY="$IMAGE_PUBLISH_REF"
           IMAGE_REPOSITORY="${IMAGE_REPOSITORY%:*}"
-          IMAGE_DIGEST="${{ needs.image-publish.outputs.image-digest }}"
+          IMAGE_DIGEST="$IMAGE_PUBLISH_DIGEST"
           IMAGE_WITH_DIGEST="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
           IMAGE_SBOM_FILE="$(find ghcr-evidence/image-security -type f \( -name 'image.cdx.json' -o -name '*.cdx.json' \) | head -n 1)"
 
@@ -904,10 +918,13 @@ jobs:
       - name: Sign published image with GitHub OIDC
         id: sign
         shell: bash
+        env:
+          IMAGE_PUBLISH_REF: ${{ needs.image-publish.outputs.image-ref }}
+          IMAGE_PUBLISH_DIGEST: ${{ needs.image-publish.outputs.image-digest }}
         run: |
-          IMAGE_REPOSITORY="${{ needs.image-publish.outputs.image-ref }}"
+          IMAGE_REPOSITORY="$IMAGE_PUBLISH_REF"
           IMAGE_REPOSITORY="${IMAGE_REPOSITORY%:*}"
-          IMAGE_DIGEST="${{ needs.image-publish.outputs.image-digest }}"
+          IMAGE_DIGEST="$IMAGE_PUBLISH_DIGEST"
           IMAGE_WITH_DIGEST="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
           cosign sign --yes "${IMAGE_WITH_DIGEST}"
           echo "image_repository=${IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
@@ -1002,26 +1019,34 @@ jobs:
 
       - name: Deploy container image
         uses: Azure/cli@089eac9d8cc39f5d003e94f8b65efc51076c9cbd # v2.1.0
+        env:
+          CONTAINER_APP_NAME: ${{ inputs.container_app_name }}
+          RESOURCE_GROUP: ${{ inputs.resource_group }}
+          VERIFIED_IMAGE_WITH_DIGEST: ${{ needs.verify-image-signature.outputs.image-with-digest }}
         with:
           inlineScript: >-
             az containerapp update
-            --name "${{ inputs.container_app_name }}"
-            --resource-group "${{ inputs.resource_group }}"
-            --image "${{ needs.verify-image-signature.outputs.image-with-digest }}"
+            --name "$CONTAINER_APP_NAME"
+            --resource-group "$RESOURCE_GROUP"
+            --image "$VERIFIED_IMAGE_WITH_DIGEST"
 
       - name: Resolve staged API URL
         id: resolve_app_url
         uses: Azure/cli@089eac9d8cc39f5d003e94f8b65efc51076c9cbd # v2.1.0
+        env:
+          STAGED_API_URL: ${{ inputs.staged_api_url }}
+          CONTAINER_APP_NAME: ${{ inputs.container_app_name }}
+          RESOURCE_GROUP: ${{ inputs.resource_group }}
         with:
           inlineScript: |
-            if [[ -n "${{ inputs.staged_api_url }}" ]]; then
-              echo "app_url=${{ inputs.staged_api_url }}" >> "$GITHUB_OUTPUT"
+            if [[ -n "$STAGED_API_URL" ]]; then
+              echo "app_url=$STAGED_API_URL" >> "$GITHUB_OUTPUT"
               exit 0
             fi
 
             FQDN="$(az containerapp show \
-              --name "${{ inputs.container_app_name }}" \
-              --resource-group "${{ inputs.resource_group }}" \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
               --query properties.configuration.ingress.fqdn \
               -o tsv)"
 
@@ -1107,6 +1132,20 @@ jobs:
       - name: Create release evidence summary
         id: evidence
         shell: bash
+        env:
+          SECURITY_GATE_STATUS: ${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}
+          BUILD_AND_TEST_RESULT: ${{ needs.dotnet-build-test.result }}
+          APP_SECURITY_RESULT: ${{ needs.dotnet-app-sca-security.result }}
+          IMAGE_SECURITY_RESULT: ${{ needs.image-sca-security.result }}
+          IMAGE_PUBLISH_RESULT: ${{ needs.image-publish.result }}
+          IMAGE_SIGN_RESULT: ${{ needs.image-sign.result }}
+          VERIFY_IMAGE_SIGNATURE_RESULT: ${{ needs.verify-image-signature.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          ZAP_BASELINE_RESULT: ${{ needs.zap-baseline.result }}
+          PUBLISHED_IMAGE_REF: ${{ needs.image-publish.outputs.image-ref }}
+          PUBLISHED_IMAGE_DIGEST: ${{ needs.image-publish.outputs.image-digest }}
+          VERIFIED_IMAGE_WITH_DIGEST: ${{ needs.verify-image-signature.outputs.image-with-digest }}
+          STAGED_APP_URL: ${{ needs.deploy.outputs.app-url }}
         run: |
           mkdir -p release-evidence
 
@@ -1125,24 +1164,24 @@ jobs:
             },
             "security": {
               "gate": {
-                "status": "${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}"
+                "status": "${SECURITY_GATE_STATUS}"
               },
               "stages": {
-                "appSecurity": "${{ needs.dotnet-app-sca-security.result }}",
-                "imageSecurity": "${{ needs.image-sca-security.result }}",
-                "signatureVerification": "${{ needs.verify-image-signature.result }}",
-                "dast": "${{ needs.zap-baseline.result }}"
+                "appSecurity": "${APP_SECURITY_RESULT}",
+                "imageSecurity": "${IMAGE_SECURITY_RESULT}",
+                "signatureVerification": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
+                "dast": "${ZAP_BASELINE_RESULT}"
               }
             },
             "artifacts": {
-              "publishedImageRef": "${{ needs.image-publish.outputs.image-ref }}",
-              "publishedImageDigest": "${{ needs.image-publish.outputs.image-digest }}",
-              "verifiedImageWithDigest": "${{ needs.verify-image-signature.outputs.image-with-digest }}",
+              "publishedImageRef": "${PUBLISHED_IMAGE_REF}",
+              "publishedImageDigest": "${PUBLISHED_IMAGE_DIGEST}",
+              "verifiedImageWithDigest": "${VERIFIED_IMAGE_WITH_DIGEST}",
               "releaseEvidenceArtifact": "release-evidence"
             },
             "deployment": {
-              "result": "${{ needs.deploy.result }}",
-              "stagedAppUrl": "${{ needs.deploy.outputs.app-url }}"
+              "result": "${DEPLOY_RESULT}",
+              "stagedAppUrl": "${STAGED_APP_URL}"
             }
           }
           EOF
@@ -1150,39 +1189,39 @@ jobs:
           cat > release-evidence/pipeline-summary.md <<EOF
           # DevSecOps Pipeline Summary
 
-          - Security gate: ${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}
-          - Build and test: ${{ needs.dotnet-build-test.result }}
-          - App security: ${{ needs.dotnet-app-sca-security.result }}
-          - Image security: ${{ needs.image-sca-security.result }}
-          - Image publish: ${{ needs.image-publish.result }}
-          - Image sign: ${{ needs.image-sign.result }}
-          - Signature verify: ${{ needs.verify-image-signature.result }}
-          - Deploy: ${{ needs.deploy.result }}
-          - ZAP baseline: ${{ needs.zap-baseline.result }}
-          - Published image ref: ${{ needs.image-publish.outputs.image-ref }}
-          - Published image digest: ${{ needs.image-publish.outputs.image-digest }}
-          - Verified image digest ref: ${{ needs.verify-image-signature.outputs.image-with-digest }}
+          - Security gate: ${SECURITY_GATE_STATUS}
+          - Build and test: ${BUILD_AND_TEST_RESULT}
+          - App security: ${APP_SECURITY_RESULT}
+          - Image security: ${IMAGE_SECURITY_RESULT}
+          - Image publish: ${IMAGE_PUBLISH_RESULT}
+          - Image sign: ${IMAGE_SIGN_RESULT}
+          - Signature verify: ${VERIFY_IMAGE_SIGNATURE_RESULT}
+          - Deploy: ${DEPLOY_RESULT}
+          - ZAP baseline: ${ZAP_BASELINE_RESULT}
+          - Published image ref: ${PUBLISHED_IMAGE_REF}
+          - Published image digest: ${PUBLISHED_IMAGE_DIGEST}
+          - Verified image digest ref: ${VERIFIED_IMAGE_WITH_DIGEST}
           - Image SBOM attached to GHCR: yes
-          - Staged app URL: ${{ needs.deploy.outputs.app-url }}
+          - Staged app URL: ${STAGED_APP_URL}
           - Commit: ${GITHUB_SHA}
           - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
 
           cat > release-evidence/pipeline-summary.json <<EOF
           {
-            "securityGate": "${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}",
-            "buildAndTest": "${{ needs.dotnet-build-test.result }}",
-            "appSecurity": "${{ needs.dotnet-app-sca-security.result }}",
-            "imageSecurity": "${{ needs.image-sca-security.result }}",
-            "imagePublish": "${{ needs.image-publish.result }}",
-            "imageSign": "${{ needs.image-sign.result }}",
-            "verifyImageSignature": "${{ needs.verify-image-signature.result }}",
-            "deploy": "${{ needs.deploy.result }}",
-            "zapBaseline": "${{ needs.zap-baseline.result }}",
-            "publishedImageRef": "${{ needs.image-publish.outputs.image-ref }}",
-            "publishedImageDigest": "${{ needs.image-publish.outputs.image-digest }}",
-            "verifiedImageWithDigest": "${{ needs.verify-image-signature.outputs.image-with-digest }}",
-            "stagedAppUrl": "${{ needs.deploy.outputs.app-url }}",
+            "securityGate": "${SECURITY_GATE_STATUS}",
+            "buildAndTest": "${BUILD_AND_TEST_RESULT}",
+            "appSecurity": "${APP_SECURITY_RESULT}",
+            "imageSecurity": "${IMAGE_SECURITY_RESULT}",
+            "imagePublish": "${IMAGE_PUBLISH_RESULT}",
+            "imageSign": "${IMAGE_SIGN_RESULT}",
+            "verifyImageSignature": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
+            "deploy": "${DEPLOY_RESULT}",
+            "zapBaseline": "${ZAP_BASELINE_RESULT}",
+            "publishedImageRef": "${PUBLISHED_IMAGE_REF}",
+            "publishedImageDigest": "${PUBLISHED_IMAGE_DIGEST}",
+            "verifiedImageWithDigest": "${VERIFIED_IMAGE_WITH_DIGEST}",
+            "stagedAppUrl": "${STAGED_APP_URL}",
             "commit": "${GITHUB_SHA}",
             "runUrl": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           }
