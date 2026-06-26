@@ -978,7 +978,7 @@ jobs:
       # Generates canonical and convenience tags plus OCI labels for the publish step.
       - name: Generate Docker metadata
         id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84c6116408bab0f1b3f4f2f # v5.8.0
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
           images: ${{ env.REGISTRY }}/${{ needs.image-sca-security.outputs.image-name }}
           tags: |
