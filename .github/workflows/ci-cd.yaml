@@ -77,20 +77,25 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checks out repository files so later steps can read source and config.
       - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
+      # Runs shared formatting validation for source files.
       - name: Validate formatting
         uses: ./.github/actions/format
 
+      # Runs shared code style validation.
       - name: Validate style
         uses: ./.github/actions/style
 
+      # Runs shared .NET analyzer checks.
       - name: Run analyzers
         uses: ./.github/actions/analyzers
 
+      # Scans repository history and files for leaked secrets.
       - name: Run Gitleaks secret scan
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
@@ -99,6 +104,7 @@ jobs:
           GITLEAKS_ENABLE_SUMMARY: true
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
+      # Lints the Dockerfile with Hadolint container rules.
       - name: Lint Dockerfile
         shell: bash
         run: docker run --rm -i hadolint/hadolint < Dockerfile
@@ -112,11 +118,13 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Checks out repository files for the Semgrep scan.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Creates output folders used by Semgrep artifacts.
       - name: Prepare Semgrep artifacts
         uses: ./.github/actions/prepare-directories
         with:
@@ -141,9 +149,10 @@ jobs:
             --output artifacts/security/semgrep.sarif \
             .
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Semgrep SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/semgrep.sarif
           category: semgrep
@@ -157,17 +166,20 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Checks out repository files for the IaC scan.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Creates output folders used by Checkov artifacts.
       - name: Prepare Checkov artifacts
         uses: ./.github/actions/prepare-directories
         with:
           directories: |
             artifacts/security
 
+      # Scans workflow, Dockerfile, and secret patterns for misconfiguration.
       - name: Run Checkov IaC scan
         id: checkov
         continue-on-error: true
@@ -179,13 +191,15 @@ jobs:
           output_format: cli,sarif
           output_file_path: console,artifacts/security/checkov.sarif
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Checkov SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/checkov.sarif
           category: checkov
 
+      # Converts Checkov findings into a failing job when results are non-empty.
       - name: Fail on Checkov findings
         if: steps.checkov.outcome == 'failure'
         shell: bash
@@ -202,23 +216,27 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Checks out repository files for CodeQL analysis.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Prepares the CodeQL database and query set for C#.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           languages: csharp
           build-mode: manual
           queries: security-and-quality
 
+      # Builds the app so CodeQL can analyze compiled sources.
       - name: Build solution for CodeQL
         uses: ./.github/actions/build
 
+      # Runs CodeQL queries and uploads results to code scanning.
       - name: Analyze with CodeQL
-        uses: github/codeql-action/analyze@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           category: /language:csharp
 
@@ -230,24 +248,29 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checks out repository files for Sonar analysis.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
+      # Installs Java required by SonarScanner.
       - name: Setup Java
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
         with:
           distribution: temurin
           java-version: "17"
 
+      # Restores .NET SDK, tools, and packages used by the scan.
       - name: Setup .NET and restore
         uses: ./.github/actions/setup
 
+      # Installs SonarScanner as a .NET global tool for later analysis steps.
       - name: Install SonarScanner for .NET
         shell: bash
         run: dotnet tool install --global dotnet-sonarscanner
 
+      # Validates Sonar secrets and resolves final scanner configuration.
       - name: Resolve Sonar configuration
         id: sonar_config
         shell: bash
@@ -278,6 +301,7 @@ jobs:
           echo "enabled=true" >> "$GITHUB_OUTPUT"
           echo "host_url=${host_url}" >> "$GITHUB_OUTPUT"
 
+      # Starts the Sonar analysis session before build and test execution.
       - name: Begin Sonar analysis
         if: steps.sonar_config.outputs.enabled == 'true'
         shell: bash
@@ -301,10 +325,12 @@ jobs:
 
           dotnet sonarscanner begin "${args[@]}"
 
+      # Builds the app during the active Sonar analysis window.
       - name: Build solution for Sonar
         if: steps.sonar_config.outputs.enabled == 'true'
         uses: ./.github/actions/build
 
+      # Runs tests so Sonar can ingest test-related signals.
       - name: Test solution for Sonar
         if: steps.sonar_config.outputs.enabled == 'true'
         uses: ./.github/actions/test
@@ -328,19 +354,23 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checks out repository files for build and test.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Runs the shared build task.
       - name: Build solution
         uses: ./.github/actions/build
 
+      # Runs the shared automated test task.
       - name: Test solution
         uses: ./.github/actions/test
 
+      # Stores test reports and coverage for later jobs.
       - name: Upload test artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: |
@@ -356,17 +386,21 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Checks out repository files for dependency and vulnerability scans.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Restores SDK, tools, Husky, and NuGet dependencies.
       - name: Setup .NET and restore
         uses: ./.github/actions/setup
 
+      # Installs the Snyk CLI used by later scan steps.
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
+      # Creates folders for publish output, SBOM files, and scan reports.
       - name: Prepare app security directories
         uses: ./.github/actions/prepare-directories
         with:
@@ -375,6 +409,7 @@ jobs:
             artifacts/sbom/app
             artifacts/security
 
+      # Publishes the app so file-system scanners inspect release output.
       - name: Publish app for scan surface
         shell: bash
         run: >-
@@ -383,6 +418,7 @@ jobs:
           -o artifacts/publish
           --no-restore
 
+      # Generates an application CycloneDX SBOM from the solution.
       - name: Generate app SBOM
         shell: bash
         run: >-
@@ -390,6 +426,7 @@ jobs:
           -o artifacts/sbom/app
           -j
 
+      # Scans source and published files with Trivy and writes SARIF output.
       - name: Run Trivy app scan SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -401,6 +438,7 @@ jobs:
           output: artifacts/security/trivy-app.sarif
           exit-code: "0"
 
+      # Produces JSON findings for Trivy policy enforcement and evidence.
       - name: Run Trivy app scan JSON
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -414,13 +452,15 @@ jobs:
           exit-code: "1"
           skip-setup-trivy: true
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Trivy app SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/trivy-app.sarif
           category: trivy-app
 
+      # Scans published app contents with Grype and writes SARIF output.
       - name: Run Grype app scan SARIF
         if: always()
         id: grype_app_sarif
@@ -431,6 +471,7 @@ jobs:
           output-format: sarif
           output-file: artifacts/security/grype-app.sarif
 
+      # Produces JSON findings for Grype evidence and gating.
       - name: Run Grype app scan JSON
         if: always()
         id: grype_app_json
@@ -441,9 +482,10 @@ jobs:
           output-format: json
           output-file: artifacts/security/grype-app.json
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Grype app SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/grype-app.sarif
           category: grype-app
@@ -471,13 +513,15 @@ jobs:
           set -e
           echo "status=${status}" >> "$GITHUB_OUTPUT"
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Snyk app SARIF
         if: always() && steps.snyk_app_scan.outputs.enabled == 'true'
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-app.sarif
           category: snyk-app
 
+      # Fails the job when Snyk reported blocking findings.
       - name: Fail on Snyk app findings
         if: always() && steps.snyk_app_scan.outputs.enabled == 'true' && steps.snyk_app_scan.outputs.status != '0'
         uses: ./.github/actions/fail-on-snyk-findings
@@ -485,6 +529,7 @@ jobs:
           status: ${{ steps.snyk_app_scan.outputs.status }}
           message: Snyk app scan found high or critical vulnerabilities.
 
+      # Uploads the generated SBOM into Dependency-Track for tracking.
       - name: Upload app SBOM to Dependency-Track
         if: always()
         uses: ./.github/actions/upload-dependency-track-bom
@@ -495,9 +540,10 @@ jobs:
           project-name: ${{ env.APP_SBOM_PROJECT_NAME }}
           project-version: ${{ github.sha }}
 
+      # Stores scan outputs and SBOM files for later jobs.
       - name: Upload app security artifacts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app-security-artifacts
           path: |
@@ -518,11 +564,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checks out repository files needed to build the image.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Normalizes repository metadata into deterministic image names and tags.
       - name: Normalize repository name
         id: meta
         shell: bash
@@ -534,20 +582,23 @@ jobs:
           echo "image_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "image_ref=ghcr.io/${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
+      # Builds the local container image used by downstream security jobs.
       - name: Build container image
         shell: bash
         env:
           IMAGE_REF: ${{ steps.meta.outputs.image_ref }}
         run: docker build -t "$IMAGE_REF" .
 
+      # Archives the built image into a compressed artifact.
       - name: Save container image artifact
         shell: bash
         env:
           IMAGE_REF: ${{ steps.meta.outputs.image_ref }}
         run: docker save "$IMAGE_REF" | gzip > "$IMAGE_TAR_PATH"
 
+      # Stores the built image as an artifact for downstream jobs.
       - name: Upload container image artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: container-image
           path: ${{ env.IMAGE_TAR_PATH }}
@@ -565,20 +616,24 @@ jobs:
       contents: read
       security-events: write
     steps:
+      # Checks out repository files for image scanning context.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Restores the previously built image artifact into this job.
       - name: Download container image artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: container-image
 
+      # Loads the downloaded image archive into the local Docker daemon.
       - name: Load container image
         shell: bash
         run: docker load < "${IMAGE_TAR_PATH}"
 
+      # Copies upstream image outputs into local step outputs for reuse.
       - name: Expose image metadata
         id: image_meta
         shell: bash
@@ -591,9 +646,11 @@ jobs:
           echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
+      # Installs the Snyk CLI used by later image scan steps.
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
+      # Creates folders for image SBOM files and scan reports.
       - name: Prepare image security directories
         uses: ./.github/actions/prepare-directories
         with:
@@ -601,6 +658,7 @@ jobs:
             artifacts/sbom/image
             artifacts/security
 
+      # Generates a CycloneDX SBOM from the built container image.
       - name: Generate image SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
@@ -610,6 +668,7 @@ jobs:
           artifact-name: image-sbom.cdx.json
           upload-artifact: false
 
+      # Scans the image with Trivy and writes SARIF output.
       - name: Run Trivy image scan SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -619,6 +678,7 @@ jobs:
           output: artifacts/security/trivy-image.sarif
           exit-code: "0"
 
+      # Produces JSON findings for Trivy policy enforcement and evidence.
       - name: Run Trivy image scan JSON
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -630,13 +690,15 @@ jobs:
           exit-code: "1"
           skip-setup-trivy: true
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Trivy image SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/trivy-image.sarif
           category: trivy-image
 
+      # Scans the image with Grype and writes SARIF output.
       - name: Run Grype image scan SARIF
         if: always()
         id: grype_image_sarif
@@ -647,6 +709,7 @@ jobs:
           output-format: sarif
           output-file: artifacts/security/grype-image.sarif
 
+      # Produces JSON findings for Grype evidence and gating.
       - name: Run Grype image scan JSON
         if: always()
         id: grype_image_json
@@ -657,9 +720,10 @@ jobs:
           output-format: json
           output-file: artifacts/security/grype-image.json
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Grype image SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/grype-image.sarif
           category: grype-image
@@ -687,13 +751,15 @@ jobs:
           set -e
           echo "status=${status}" >> "$GITHUB_OUTPUT"
 
+      # Uploads SARIF results to GitHub Code Scanning in the Security tab.
       - name: Upload Snyk image SARIF
         if: always() && steps.snyk_image_scan.outputs.enabled == 'true'
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.30.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-image.sarif
           category: snyk-image
 
+      # Fails the job when Snyk reported blocking findings.
       - name: Fail on Snyk image findings
         if: always() && steps.snyk_image_scan.outputs.enabled == 'true' && steps.snyk_image_scan.outputs.status != '0'
         uses: ./.github/actions/fail-on-snyk-findings
@@ -701,6 +767,7 @@ jobs:
           status: ${{ steps.snyk_image_scan.outputs.status }}
           message: Snyk image scan found high or critical vulnerabilities.
 
+      # Uploads the generated image SBOM into Dependency-Track.
       - name: Upload image SBOM to Dependency-Track
         if: always()
         uses: ./.github/actions/upload-dependency-track-bom
@@ -711,9 +778,10 @@ jobs:
           project-name: ${{ env.APP_SBOM_PROJECT_NAME }}-image
           project-version: ${{ github.sha }}
 
+      # Stores image scan outputs and SBOM files for later jobs.
       - name: Upload image security artifacts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image-security-artifacts
           path: |
@@ -734,6 +802,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Aggregates app and image scan outcomes into one gate decision.
       - name: Evaluate security gate
         id: evaluate
         shell: bash
@@ -778,9 +847,10 @@ jobs:
             exit 1
           fi
 
+      # Stores the generated gate report for later evidence collection.
       - name: Upload security gate report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: security-gate-report
           path: reports/security-gate-report.md
@@ -799,22 +869,26 @@ jobs:
       contents: read
       packages: write
     steps:
+      # Restores the built image artifact into the publish job.
       - name: Download container image artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: container-image
 
+      # Authenticates Docker to GHCR for image push operations.
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      # Loads the image artifact into Docker before pushing to GHCR.
       - name: Load image for publish
         shell: bash
         run: docker load < "${IMAGE_TAR_PATH}"
 
+      # Pushes the image and records the immutable digest output.
       - name: Push image
         id: push
         shell: bash
@@ -837,8 +911,9 @@ jobs:
       attestations: write
       contents: read
     steps:
+      # Creates a provenance attestation for the published image digest.
       - name: Attest published image
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ needs.image-sign.outputs.image-repository }}
           subject-digest: ${{ needs.image-sign.outputs.image-digest }}
@@ -858,24 +933,28 @@ jobs:
       packages: write
       id-token: write
     steps:
+      # Restores scan artifacts so the image SBOM can be attached.
       - name: Download image security artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: image-security-artifacts
           path: ghcr-evidence/image-security
 
+      # Authenticates Docker to GHCR for attach and sign operations.
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      # Installs the Cosign CLI used for SBOM attach and signing.
       - name: Install Cosign
-        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
 
+      # Attaches the generated SBOM file to the published image reference.
       - name: Attach image SBOM to published image
         shell: bash
         env:
@@ -895,6 +974,7 @@ jobs:
 
           cosign attach sbom --sbom "${IMAGE_SBOM_FILE}" "${IMAGE_WITH_DIGEST}"
 
+      # Signs the published image with GitHub-issued OIDC identity.
       - name: Sign published image with GitHub OIDC
         id: sign
         shell: bash
@@ -923,18 +1003,21 @@ jobs:
       contents: read
       packages: read
     steps:
+      # Authenticates Docker to GHCR so the signed image can be verified.
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      # Installs the Cosign CLI used for signature verification.
       - name: Install Cosign
-        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
 
+      # Verifies the keyless signature against this workflow identity.
       - name: Verify keyless image signature
         id: verified_image
         shell: bash
@@ -962,6 +1045,7 @@ jobs:
       contents: read
       packages: write
     steps:
+      # Validates required manual deployment inputs before touching Azure.
       - name: Validate deploy inputs
         shell: bash
         env:
@@ -978,27 +1062,31 @@ jobs:
             exit 1
           fi
 
+      # Checks out repository files used by deployment steps.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
 
+      # Authenticates Docker to GHCR for deployment-related image access.
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      # Authenticates the workflow to Azure using OIDC.
       - name: Azure login
-        uses: Azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        uses: Azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Runs Azure CLI commands to update the Container App image.
       - name: Deploy container image
-        uses: Azure/cli@089eac9d8cc39f5d003e94f8b65efc51076c9cbd # v2.1.0
+        uses: Azure/cli@9eb25b8360668fb0ecbafa808d40e2197b2f5f52 # v3.0.0
         env:
           CONTAINER_APP_NAME: ${{ inputs.container_app_name }}
           RESOURCE_GROUP: ${{ inputs.resource_group }}
@@ -1010,9 +1098,10 @@ jobs:
             --resource-group "$RESOURCE_GROUP"
             --image "$VERIFIED_IMAGE_WITH_DIGEST"
 
+      # Runs Azure CLI commands to resolve the staged app URL.
       - name: Resolve staged API URL
         id: resolve_app_url
-        uses: Azure/cli@089eac9d8cc39f5d003e94f8b65efc51076c9cbd # v2.1.0
+        uses: Azure/cli@9eb25b8360668fb0ecbafa808d40e2197b2f5f52 # v3.0.0
         env:
           STAGED_API_URL: ${{ inputs.staged_api_url }}
           CONTAINER_APP_NAME: ${{ inputs.container_app_name }}
@@ -1046,8 +1135,9 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Runs OWASP ZAP baseline checks against the staged API URL.
       - name: Run ZAP baseline scan
-        uses: zaproxy/action-baseline@2b5fc7f98d837319798ab7f128ea50b7d40563b6 # v0.14.0
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
         with:
           target: ${{ needs.deploy.outputs.app-url }}
           docker_name: ghcr.io/zaproxy/zaproxy:stable
@@ -1074,41 +1164,47 @@ jobs:
       contents: read
       issues: write
     steps:
+      # Restores saved test reports into the final evidence bundle.
       - name: Download test results
         if: always() && needs.dotnet-build-test.result == 'success'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: test-results
           path: release-evidence/test-results
 
+      # Restores saved app security outputs into the final evidence bundle.
       - name: Download app security artifacts
         if: always() && needs.dotnet-app-sca-security.result != 'skipped'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: app-security-artifacts
           path: release-evidence/app-security
 
+      # Restores saved image security outputs into the final evidence bundle.
       - name: Download image security artifacts
         if: always() && needs.image-sca-security.result != 'skipped'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: image-security-artifacts
           path: release-evidence/image-security
 
+      # Restores the gate report into the final evidence bundle.
       - name: Download security gate report
         if: always() && needs.security-gate.result != 'skipped'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: security-gate-report
           path: release-evidence/security-gate
 
+      # Restores the ZAP report into the final evidence bundle.
       - name: Download ZAP report
         if: always() && needs.zap-baseline.result != 'skipped'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: zap-baseline-report
           path: release-evidence/zap-baseline
 
+      # Assembles machine-readable and human-readable release evidence files.
       - name: Create release evidence summary
         id: evidence
         shell: bash
@@ -1209,9 +1305,10 @@ jobs:
 
           cat release-evidence/pipeline-summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      # Publishes the assembled release evidence as one downloadable artifact.
       - name: Upload release evidence bundle
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-evidence
           path: release-evidence/**
