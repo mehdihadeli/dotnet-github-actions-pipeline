@@ -1,5 +1,5 @@
 name: Setup .NET sample
-description: Setup SDK, restore local tools, and restore solution dependencies.
+description: Setup SDK, restore local tools, configure Husky, and restore solution dependencies.
 
 inputs:
   global-json-file:
@@ -22,6 +22,10 @@ runs:
   - name: Restore local tools
     shell: bash
     run: dotnet tool restore
+
+  - name: Configure Husky
+    shell: bash
+    run: dotnet tool run husky -- install
 
   - name: Restore solution
     shell: bash

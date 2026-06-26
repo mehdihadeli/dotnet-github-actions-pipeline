@@ -1,5 +1,5 @@
 name: Test solution
-description: Run tests with TRX and XPlat coverage output.
+description: Run tests using the Husky-managed test task.
 
 inputs:
   global-json-file:
@@ -26,14 +26,8 @@ runs:
 
   - name: Build for tests
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-    run: dotnet build "$SOLUTION_PATH" -c Release --no-restore
+    run: dotnet tool run husky -- run --name build
 
   - name: Run tests
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-      RESULTS_DIRECTORY: ${{ inputs.results-directory }}
-    run: >-
-      dotnet test "$SOLUTION_PATH" -c Release --no-build --logger trx --results-directory "$RESULTS_DIRECTORY" --collect:"XPlat Code Coverage"
+    run: dotnet tool run husky -- run --name test

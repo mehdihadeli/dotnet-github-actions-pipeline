@@ -1,5 +1,5 @@
 name: Run analyzers
-description: Execute analyzers with code-style enforcement.
+description: Execute Husky-managed analyzer checks.
 
 inputs:
   global-json-file:
@@ -22,6 +22,4 @@ runs:
 
   - name: Run Roslyn analyzers
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-    run: dotnet build "$SOLUTION_PATH" -c Release --no-restore /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
+    run: dotnet tool run husky -- run --name analyzers

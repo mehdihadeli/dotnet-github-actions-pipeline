@@ -1,5 +1,5 @@
 name: Validate formatting
-description: Run dotnet format in verify mode.
+description: Run Husky-managed formatting checks.
 
 inputs:
   global-json-file:
@@ -22,6 +22,4 @@ runs:
 
   - name: Verify formatting
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-    run: dotnet format "$SOLUTION_PATH" --verify-no-changes --severity error
+    run: dotnet tool run husky -- run --name format

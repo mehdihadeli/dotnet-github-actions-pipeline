@@ -1,5 +1,5 @@
 name: Validate style
-description: Run warning-as-error build checks.
+description: Run Husky-managed style checks.
 
 inputs:
   global-json-file:
@@ -22,6 +22,4 @@ runs:
 
   - name: Validate style warnings
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-    run: dotnet build "$SOLUTION_PATH" -c Release --no-restore /warnaserror
+    run: dotnet tool run husky -- run --name style

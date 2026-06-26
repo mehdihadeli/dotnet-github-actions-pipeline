@@ -1,0 +1,50 @@
+name: Upload Dependency-Track BOM
+description: Upload a CycloneDX BOM file to Dependency-Track when credentials are configured.
+
+inputs:
+  dependency-track-url:
+    description: Dependency-Track base URL.
+    required: false
+    default: ""
+  dependency-track-api-key:
+    description: Dependency-Track API key.
+    required: false
+    default: ""
+  bom-file:
+    description: Path to the BOM file to upload.
+    required: true
+  project-name:
+    description: Dependency-Track project name.
+    required: true
+  project-version:
+    description: Dependency-Track project version.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Upload BOM
+    shell: bash
+    env:
+      DEPENDENCY_TRACK_URL: ${{ inputs.dependency-track-url }}
+      DEPENDENCY_TRACK_API_KEY: ${{ inputs.dependency-track-api-key }}
+      BOM_FILE: ${{ inputs.bom-file }}
+      PROJECT_NAME: ${{ inputs.project-name }}
+      PROJECT_VERSION: ${{ inputs.project-version }}
+    run: |
+      if [[ -z "$DEPENDENCY_TRACK_URL" || -z "$DEPENDENCY_TRACK_API_KEY" ]]; then
+        echo "Dependency-Track secrets not configured. Skip BOM upload."
+        exit 0
+      fi
+
+      if [[ ! -f "$BOM_FILE" ]]; then
+        echo "::error::Dependency-Track BOM file not found: $BOM_FILE"
+        exit 1
+      fi
+
+      curl -fsS -X POST "$DEPENDENCY_TRACK_URL/api/v1/bom" \
+        -H "X-Api-Key: $DEPENDENCY_TRACK_API_KEY" \
+        -F "autoCreate=true" \
+        -F "projectName=$PROJECT_NAME" \
+        -F "projectVersion=$PROJECT_VERSION" \
+        -F "bom=@$BOM_FILE"

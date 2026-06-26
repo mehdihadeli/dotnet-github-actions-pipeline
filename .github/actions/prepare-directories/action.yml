@@ -1,0 +1,20 @@
+name: Prepare directories
+description: Create one or more directories for workflow artifacts.
+
+inputs:
+  directories:
+    description: Newline-separated list of directories to create.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Create directories
+    shell: bash
+    env:
+      DIRECTORIES: ${{ inputs.directories }}
+    run: |
+      while IFS= read -r directory; do
+        [[ -z "$directory" ]] && continue
+        mkdir -p "$directory"
+      done <<< "$DIRECTORIES"

@@ -1,0 +1,22 @@
+name: Fail on Snyk findings
+description: Fail the workflow when a Snyk scan reports high or critical vulnerabilities.
+
+inputs:
+  status:
+    description: Exit status returned by the Snyk scan.
+    required: true
+  message:
+    description: Error message to emit before failing the step.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Fail step when status is non-zero
+    shell: bash
+    env:
+      SNYK_STATUS: ${{ inputs.status }}
+      SNYK_MESSAGE: ${{ inputs.message }}
+    run: |
+      echo "::error::$SNYK_MESSAGE"
+      exit "$SNYK_STATUS"

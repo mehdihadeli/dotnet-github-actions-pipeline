@@ -1,5 +1,5 @@
 name: Build solution
-description: Build solution in Release mode.
+description: Build solution using the Husky-managed build task.
 
 inputs:
   global-json-file:
@@ -22,6 +22,4 @@ runs:
 
   - name: Build
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-    run: dotnet build "$SOLUTION_PATH" -c Release --no-restore
+    run: dotnet tool run husky -- run --name build

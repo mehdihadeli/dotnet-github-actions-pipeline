@@ -4,13 +4,22 @@
       "name": "format",
       "group": "pre-commit",
       "command": "dotnet",
-      "args": [
-        "format",
-        "DevSecOpsPipelineSample.slnx",
-        "--verify-no-changes",
-        "--severity",
-        "error"
-      ],
+      "args": ["tool", "run", "csharpier", "format", "."],
+      "include": [
+        "**/*.cs",
+        "**/*.csproj",
+        "**/*.props",
+        "**/*.targets",
+        "**/*.editorconfig",
+        "**/*.sln",
+        "**/*.slnx"
+      ]
+    },
+    {
+      "name": "style",
+      "group": "pre-push",
+      "command": "dotnet",
+      "args": ["tool", "run", "csharpier", "check", "."],
       "include": [
         "**/*.cs",
         "**/*.csproj",
@@ -26,13 +35,10 @@
       "group": "pre-push",
       "command": "dotnet",
       "args": [
-        "build",
+        "format",
+        "analyzers",
         "DevSecOpsPipelineSample.slnx",
-        "-c",
-        "Release",
-        "--no-restore",
-        "/p:RunAnalyzers=true",
-        "/p:EnforceCodeStyleInBuild=true"
+        "--verify-no-changes"
       ],
       "include": [
         "**/*.cs",
@@ -51,9 +57,9 @@
       "args": [
         "build",
         "DevSecOpsPipelineSample.slnx",
-        "-c",
-        "Release",
         "--no-restore",
+        "--configuration",
+        "Release",
         "/warnaserror"
       ],
       "include": [
@@ -73,9 +79,14 @@
       "args": [
         "test",
         "DevSecOpsPipelineSample.slnx",
-        "-c",
+        "--configuration",
         "Release",
         "--no-build",
+        "--logger",
+        "trx",
+        "--results-directory",
+        "TestResults",
+        "--collect:XPlat Code Coverage",
         "--verbosity",
         "minimal"
       ],

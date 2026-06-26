@@ -118,8 +118,10 @@ jobs:
           fetch-depth: 1
 
       - name: Prepare Semgrep artifacts
-        shell: bash
-        run: mkdir -p artifacts/security
+        uses: ./.github/actions/prepare-directories
+        with:
+          directories: |
+            artifacts/security
 
       - name: Run Semgrep SAST
         shell: bash
@@ -132,6 +134,7 @@ jobs:
             --config auto \
             --error \
             --verbose \
+            --metrics=auto \
             --exclude .git \
             --exclude artifacts \
             --exclude tests \
@@ -161,8 +164,10 @@ jobs:
           fetch-depth: 1
 
       - name: Prepare Checkov artifacts
-        shell: bash
-        run: mkdir -p artifacts/security
+        uses: ./.github/actions/prepare-directories
+        with:
+          directories: |
+            artifacts/security
 
       - name: Run Checkov IaC scan
         id: checkov
@@ -299,14 +304,11 @@ jobs:
 
       - name: Build solution for Sonar
         if: steps.sonar_config.outputs.enabled == 'true'
-        shell: bash
-        run: dotnet build DevSecOpsPipelineSample.slnx -c Release --no-restore
+        uses: ./.github/actions/build
 
       - name: Test solution for Sonar
         if: steps.sonar_config.outputs.enabled == 'true'
-        shell: bash
-        run: >-
-          dotnet test DevSecOpsPipelineSample.slnx -c Release --no-build --logger trx --results-directory TestResults --collect:"XPlat Code Coverage"
+        uses: ./.github/actions/test
 
       - name: End Sonar analysis
         if: steps.sonar_config.outputs.enabled == 'true'
@@ -367,11 +369,12 @@ jobs:
         uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
       - name: Prepare app security directories
-        shell: bash
-        run: |
-          mkdir -p artifacts/publish
-          mkdir -p artifacts/sbom/app
-          mkdir -p artifacts/security
+        uses: ./.github/actions/prepare-directories
+        with:
+          directories: |
+            artifacts/publish
+            artifacts/sbom/app
+            artifacts/security
 
       - name: Publish app for scan surface
         shell: bash
@@ -478,32 +481,20 @@ jobs:
 
       - name: Fail on Snyk app findings
         if: always() && steps.snyk_app_scan.outputs.enabled == 'true' && steps.snyk_app_scan.outputs.status != '0'
-        shell: bash
-        env:
-          SNYK_APP_STATUS: ${{ steps.snyk_app_scan.outputs.status }}
-        run: |
-          echo "::error::Snyk app scan found high or critical vulnerabilities."
-          exit "$SNYK_APP_STATUS"
+        uses: ./.github/actions/fail-on-snyk-findings
+        with:
+          status: ${{ steps.snyk_app_scan.outputs.status }}
+          message: Snyk app scan found high or critical vulnerabilities.
 
       - name: Upload app SBOM to Dependency-Track
         if: always()
-        shell: bash
-        env:
-          DEPENDENCY_TRACK_URL: ${{ secrets.DEPENDENCY_TRACK_URL }}
-          DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
-        run: |
-          if [[ -z "${DEPENDENCY_TRACK_URL}" || -z "${DEPENDENCY_TRACK_API_KEY}" ]]; then
-            echo "Dependency-Track secrets not configured. Skip app SBOM upload."
-            exit 0
-          fi
-
-          APP_SBOM_FILE="$(find artifacts/sbom/app -type f -name '*.json' | head -n 1)"
-          curl -fsS -X POST "${DEPENDENCY_TRACK_URL}/api/v1/bom" \
-            -H "X-Api-Key: ${DEPENDENCY_TRACK_API_KEY}" \
-            -F "autoCreate=true" \
-            -F "projectName=${APP_SBOM_PROJECT_NAME}" \
-            -F "projectVersion=${GITHUB_SHA}" \
-            -F "bom=@${APP_SBOM_FILE}"
+        uses: ./.github/actions/upload-dependency-track-bom
+        with:
+          dependency-track-url: ${{ secrets.DEPENDENCY_TRACK_URL }}
+          dependency-track-api-key: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+          bom-file: artifacts/sbom/app/bom.json
+          project-name: ${{ env.APP_SBOM_PROJECT_NAME }}
+          project-version: ${{ github.sha }}
 
       - name: Upload app security artifacts
         if: always()
@@ -605,10 +596,11 @@ jobs:
         uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
       - name: Prepare image security directories
-        shell: bash
-        run: |
-          mkdir -p artifacts/sbom/image
-          mkdir -p artifacts/security
+        uses: ./.github/actions/prepare-directories
+        with:
+          directories: |
+            artifacts/sbom/image
+            artifacts/security
 
       - name: Generate image SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
@@ -705,31 +697,20 @@ jobs:
 
       - name: Fail on Snyk image findings
         if: always() && steps.snyk_image_scan.outputs.enabled == 'true' && steps.snyk_image_scan.outputs.status != '0'
-        shell: bash
-        env:
-          SNYK_IMAGE_STATUS: ${{ steps.snyk_image_scan.outputs.status }}
-        run: |
-          echo "::error::Snyk image scan found high or critical vulnerabilities."
-          exit "$SNYK_IMAGE_STATUS"
+        uses: ./.github/actions/fail-on-snyk-findings
+        with:
+          status: ${{ steps.snyk_image_scan.outputs.status }}
+          message: Snyk image scan found high or critical vulnerabilities.
 
       - name: Upload image SBOM to Dependency-Track
         if: always()
-        shell: bash
-        env:
-          DEPENDENCY_TRACK_URL: ${{ secrets.DEPENDENCY_TRACK_URL }}
-          DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
-        run: |
-          if [[ -z "${DEPENDENCY_TRACK_URL}" || -z "${DEPENDENCY_TRACK_API_KEY}" ]]; then
-            echo "Dependency-Track secrets not configured. Skip image SBOM upload."
-            exit 0
-          fi
-
-          curl -fsS -X POST "${DEPENDENCY_TRACK_URL}/api/v1/bom" \
-            -H "X-Api-Key: ${DEPENDENCY_TRACK_API_KEY}" \
-            -F "autoCreate=true" \
-            -F "projectName=${APP_SBOM_PROJECT_NAME}-image" \
-            -F "projectVersion=${GITHUB_SHA}" \
-            -F "bom=@artifacts/sbom/image/image.cdx.json"
+        uses: ./.github/actions/upload-dependency-track-bom
+        with:
+          dependency-track-url: ${{ secrets.DEPENDENCY_TRACK_URL }}
+          dependency-track-api-key: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+          bom-file: artifacts/sbom/image/image.cdx.json
+          project-name: ${{ env.APP_SBOM_PROJECT_NAME }}-image
+          project-version: ${{ github.sha }}
 
       - name: Upload image security artifacts
         if: always()
