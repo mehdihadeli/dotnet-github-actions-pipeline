@@ -1,0 +1,93 @@
+{
+  "tasks": [
+    {
+      "name": "format",
+      "group": "pre-commit",
+      "command": "dotnet",
+      "args": [
+        "format",
+        "DevSecOpsPipelineSample.slnx",
+        "--verify-no-changes",
+        "--severity",
+        "error"
+      ],
+      "include": [
+        "**/*.cs",
+        "**/*.csproj",
+        "**/*.props",
+        "**/*.targets",
+        "**/*.editorconfig",
+        "**/*.sln",
+        "**/*.slnx"
+      ]
+    },
+    {
+      "name": "analyzers",
+      "group": "pre-push",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "DevSecOpsPipelineSample.slnx",
+        "-c",
+        "Release",
+        "--no-restore",
+        "/p:RunAnalyzers=true",
+        "/p:EnforceCodeStyleInBuild=true"
+      ],
+      "include": [
+        "**/*.cs",
+        "**/*.csproj",
+        "**/*.props",
+        "**/*.targets",
+        "**/*.editorconfig",
+        "**/*.sln",
+        "**/*.slnx"
+      ]
+    },
+    {
+      "name": "build",
+      "group": "pre-push",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "DevSecOpsPipelineSample.slnx",
+        "-c",
+        "Release",
+        "--no-restore",
+        "/warnaserror"
+      ],
+      "include": [
+        "**/*.cs",
+        "**/*.csproj",
+        "**/*.props",
+        "**/*.targets",
+        "**/*.editorconfig",
+        "**/*.sln",
+        "**/*.slnx"
+      ]
+    },
+    {
+      "name": "test",
+      "group": "pre-push",
+      "command": "dotnet",
+      "args": [
+        "test",
+        "DevSecOpsPipelineSample.slnx",
+        "-c",
+        "Release",
+        "--no-build",
+        "--verbosity",
+        "minimal"
+      ],
+      "include": [
+        "src/**/*",
+        "tests/**/*",
+        "**/*.csproj",
+        "**/*.props",
+        "**/*.targets",
+        "**/*.sln",
+        "**/*.slnx"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+name: Build solution
+description: Build solution in Release mode.
+
+inputs:
+  global-json-file:
+    description: Path to global.json.
+    required: false
+    default: global.json
+  solution-path:
+    description: Path to solution or solution filter.
+    required: false
+    default: DevSecOpsPipelineSample.slnx
+
+runs:
+  using: composite
+  steps:
+  - name: Setup
+    uses: ./.github/actions/setup
+    with:
+      global-json-file: ${{ inputs.global-json-file }}
+      solution-path: ${{ inputs.solution-path }}
+
+  - name: Build
+    shell: bash
+    run: dotnet build "${{ inputs.solution-path }}" -c Release --no-restore

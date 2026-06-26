@@ -1,0 +1,25 @@
+name: Validate formatting
+description: Run dotnet format in verify mode.
+
+inputs:
+  global-json-file:
+    description: Path to global.json.
+    required: false
+    default: global.json
+  solution-path:
+    description: Path to solution or solution filter.
+    required: false
+    default: DevSecOpsPipelineSample.slnx
+
+runs:
+  using: composite
+  steps:
+  - name: Setup
+    uses: ./.github/actions/setup
+    with:
+      global-json-file: ${{ inputs.global-json-file }}
+      solution-path: ${{ inputs.solution-path }}
+
+  - name: Verify formatting
+    shell: bash
+    run: dotnet format "${{ inputs.solution-path }}" --verify-no-changes --severity error
