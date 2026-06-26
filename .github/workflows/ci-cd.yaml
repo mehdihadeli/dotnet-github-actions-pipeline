@@ -1340,12 +1340,21 @@ jobs:
         run: |
           mkdir -p release-evidence
 
+          IMAGE_VERSION="${PUBLISHED_IMAGE_REF##*:}"
+          if [[ -z "${PUBLISHED_IMAGE_REF}" || "${IMAGE_VERSION}" == "${PUBLISHED_IMAGE_REF}" ]]; then
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              IMAGE_VERSION="${GITHUB_REF_NAME}"
+            else
+              IMAGE_VERSION="${GITHUB_SHA::7}"
+            fi
+          fi
+
           cat > release-evidence/build-metadata.json <<EOF
           {
             "build": {
               "name": "DevSecOpsPipelineSample",
               "number": "${GITHUB_RUN_NUMBER}",
-              "version": "${GITHUB_SHA}",
+              "version": "${IMAGE_VERSION}",
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
               "vcs": {
                 "revision": "${GITHUB_SHA}",
