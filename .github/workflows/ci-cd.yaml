@@ -69,6 +69,7 @@ env:
   DOTNET_NOLOGO: true
   HUSKY: 0
   APP_SBOM_PROJECT_NAME: DevSecOpsPipelineSample
+  REGISTRY: ghcr.io
   IMAGE_TAR_PATH: image.tar.gz
   TRIVY_FAIL_SEVERITY: CRITICAL,HIGH
 
@@ -387,6 +388,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      id-token: write
     steps:
       # Checks out repository files for dependency and vulnerability scans.
       - name: Checkout code
@@ -401,6 +403,13 @@ jobs:
       # Installs the Snyk CLI used by later scan steps.
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
+
+      # Installs Cosign for detached SBOM signing on trusted workflow runs.
+      - name: Install Cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
 
       # Creates folders for publish output, SBOM files, and scan reports.
       - name: Prepare app security directories
@@ -427,6 +436,35 @@ jobs:
           dotnet tool run dotnet-CycloneDX DevSecOpsPipelineSample.slnx
           -o artifacts/sbom/app
           -j
+
+      # Signs the generated app SBOM and writes a detached verification bundle.
+      - name: Sign app SBOM
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: >-
+          cosign sign-blob --yes
+          --bundle artifacts/sbom/app/bom.sigstore.json
+          artifacts/sbom/app/bom.json
+
+      # Verifies the detached app SBOM bundle against this workflow identity.
+      - name: Verify app SBOM signature
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: >-
+          cosign verify-blob
+          --bundle artifacts/sbom/app/bom.sigstore.json
+          --certificate-identity-regexp '^https://github.com/.+$'
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          --certificate-github-workflow-repository "$GITHUB_REPOSITORY"
+          --certificate-github-workflow-ref "$GITHUB_REF"
+          --certificate-github-workflow-sha "$GITHUB_SHA"
+          --certificate-github-workflow-trigger "$GITHUB_EVENT_NAME"
+          artifacts/sbom/app/bom.json
 
       # Scans source and published files with Trivy and writes SARIF output.
       - name: Run Trivy app scan SARIF
@@ -628,6 +666,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      id-token: write
     steps:
       # Checks out repository files for image scanning context.
       - name: Checkout code
@@ -663,6 +702,13 @@ jobs:
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
+      # Installs Cosign for detached SBOM signing on trusted workflow runs.
+      - name: Install Cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
       # Creates folders for image SBOM files and scan reports.
       - name: Prepare image security directories
         uses: ./.github/actions/prepare-directories
@@ -680,6 +726,35 @@ jobs:
           output-file: artifacts/sbom/image/image.cdx.json
           artifact-name: image-sbom.cdx.json
           upload-artifact: false
+
+      # Signs the generated image SBOM and writes a detached verification bundle.
+      - name: Sign image SBOM
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: >-
+          cosign sign-blob --yes
+          --bundle artifacts/sbom/image/image-sbom.sigstore.json
+          artifacts/sbom/image/image.cdx.json
+
+      # Verifies the detached image SBOM bundle against this workflow identity.
+      - name: Verify image SBOM signature
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: >-
+          cosign verify-blob
+          --bundle artifacts/sbom/image/image-sbom.sigstore.json
+          --certificate-identity-regexp '^https://github.com/.+$'
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          --certificate-github-workflow-repository "$GITHUB_REPOSITORY"
+          --certificate-github-workflow-ref "$GITHUB_REF"
+          --certificate-github-workflow-sha "$GITHUB_SHA"
+          --certificate-github-workflow-trigger "$GITHUB_EVENT_NAME"
+          artifacts/sbom/image/image.cdx.json
 
       # Scans the image with Trivy and writes SARIF output.
       - name: Run Trivy image scan SARIF
@@ -875,43 +950,70 @@ jobs:
       - security-gate
       - image-sca-security
     outputs:
-      image-ref: ${{ steps.push.outputs.image_ref }}
-      image-digest: ${{ steps.push.outputs.image_digest }}
+      image-ref: ${{ needs.image-sca-security.outputs.image-ref }}
+      image-digest: ${{ steps.build_and_push.outputs.digest }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
-      # Restores the built image artifact into the publish job.
-      - name: Download container image artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      # Checks out repository files so Docker can rebuild and publish the image.
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          name: container-image
+          fetch-depth: 1
+
+      # Enables Docker Buildx for registry-backed builds and cache support.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       # Authenticates Docker to GHCR for image push operations.
-      - name: Login to GHCR
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Loads the image artifact into Docker before pushing to GHCR.
-      - name: Load image for publish
-        shell: bash
-        run: docker load < "${IMAGE_TAR_PATH}"
+      # Generates canonical and convenience tags plus OCI labels for the publish step.
+      - name: Generate Docker metadata
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84c6116408bab0f1b3f4f2f # v5.8.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ needs.image-sca-security.outputs.image-name }}
+          tags: |
+            type=raw,value=${{ needs.image-sca-security.outputs.image-tag }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      # Pushes the image and records the immutable digest output.
-      - name: Push image
-        id: push
+      # Rebuilds the container and pushes tags to GHCR using Docker's publish action.
+      - name: Build and push Docker image
+        id: build_and_push
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ github.ref_name }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
+
+      # Records the selected published image reference for downstream jobs and summaries.
+      - name: Summarize published image
         shell: bash
         env:
           IMAGE_REF: ${{ needs.image-sca-security.outputs.image-ref }}
+          IMAGE_DIGEST: ${{ steps.build_and_push.outputs.digest }}
         run: |
-          docker push "${IMAGE_REF}"
-          IMAGE_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_REF}" | awk -F@ '{print $2}')"
-          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
-          echo "image_digest=${IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Published ${IMAGE_REF}"
+          echo "Digest ${IMAGE_DIGEST}"
+          {
+            echo "## Published Image"
+            echo ""
+            echo "- Reference: ${IMAGE_REF}"
+            echo "- Digest: ${IMAGE_DIGEST}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   attest:
     name: Attest image provenance
@@ -958,8 +1060,8 @@ jobs:
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Installs the Cosign CLI used for SBOM attach and signing.
       - name: Install Cosign
@@ -1021,8 +1123,8 @@ jobs:
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Installs the Cosign CLI used for signature verification.
       - name: Install Cosign
@@ -1086,8 +1188,8 @@ jobs:
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Authenticates the workflow to Azure using OIDC.
       - name: Azure login
