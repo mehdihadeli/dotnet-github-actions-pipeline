@@ -127,10 +127,11 @@ jobs:
           docker run --rm \
             -v "$PWD:/src" \
             -w /src \
-            semgrep/semgrep:1.130.0 \
+            semgrep/semgrep:latest \
             semgrep scan \
             --config auto \
             --error \
+            --verbose \
             --exclude .git \
             --exclude artifacts \
             --exclude tests \
