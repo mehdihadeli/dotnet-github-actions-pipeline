@@ -333,7 +333,7 @@ jobs:
           TEST_ADDITIONAL_COVERAGE_OUTPUT_FORMAT: ""
           TEST_ADDITIONAL_COVERAGE_OUTPUT: ""
           TEST_NO_BUILD: "true"
-        run: dotnet tool run husky -- run --name test
+        run: sh scripts/run-tests.sh
 
       - name: Sonarqube End
         if: always() && steps.sonar_config.outputs.enabled == 'true'
