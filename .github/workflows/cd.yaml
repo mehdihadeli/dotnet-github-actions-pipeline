@@ -14,6 +14,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # =============================================================================
+  # STAGE 1: DEPLOYMENT INTAKE FROM CI EVIDENCE
+  # Read CI metadata and decide whether this run is allowed to promote an artifact.
+  # Local tools: gh api, jq, unzip for inspecting CI evidence bundles before deployment.
+  # =============================================================================
   prepare-deployment:
     name: Prepare deployment
     runs-on: ubuntu-latest
@@ -64,6 +69,12 @@ jobs:
           echo "target_environment=$target_environment" >> "$GITHUB_OUTPUT"
           echo "image_with_digest=$image_with_digest" >> "$GITHUB_OUTPUT"
 
+  # =============================================================================
+  # STAGE 2: PRE-DEPLOY SUPPLY CHAIN VERIFICATION
+  # Re-verify signed image before release. CI signing alone is not enough at promotion time.
+  # Pipeline tool: Cosign keyless verification against expected GitHub workflow identity.
+  # Local tool: cosign verify for independent release validation.
+  # =============================================================================
   verify-image-signature:
     name: Verify image signature
     if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
@@ -102,6 +113,12 @@ jobs:
             "$IMAGE_WITH_DIGEST"
           echo "image_with_digest=$IMAGE_WITH_DIGEST" >> "$GITHUB_OUTPUT"
 
+  # =============================================================================
+  # STAGE 3: DEPLOY TO STAGED RUNTIME
+  # Push previously verified image into Azure Container Apps runtime.
+  # Pipeline tools: Azure Login action and Azure CLI.
+  # Local tools: az login, az containerapp update, az containerapp show.
+  # =============================================================================
   deploy:
     name: Deploy to Azure Container Apps
     if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
@@ -146,7 +163,6 @@ jobs:
         if: steps.deploy_config.outputs.enabled != 'true'
         run: echo "Deploy skipped due to missing AZURE_RESOURCE_GROUP and/or CONTAINER_APP_NAME."
 
-      # Add this condition to every real deploy step:
       - name: Deploy to Azure
         if: steps.deploy_config.outputs.enabled == 'true'
         env:
@@ -203,6 +219,13 @@ jobs:
 
             echo "app_url=https://${FQDN}" >> "$GITHUB_OUTPUT"
 
+  # =============================================================================
+  # STAGE 4: DAST ON STAGED API
+  # Dynamic scan happens after deployment because runtime behavior, headers, auth edges,
+  # and exposed routes cannot be fully covered by SAST or SCA.
+  # Pipeline tool: OWASP ZAP baseline.
+  # Local tool: zap-baseline.py or OWASP ZAP desktop/proxy against staged endpoint.
+  # =============================================================================
   zap-baseline:
     name: ZAP baseline staged API scan
     if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
@@ -223,6 +246,10 @@ jobs:
           allow_issue_writing: false
           artifact_name: zap-baseline-report
 
+  # =============================================================================
+  # STAGE 5: DEPLOYMENT EVIDENCE AND SUMMARY
+  # Persist deploy result, verified digest, and DAST outcome for release traceability.
+  # =============================================================================
   record-and-notify:
     name: Record and notify
     if: always()

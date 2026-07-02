@@ -9,7 +9,7 @@ Sample shows repo-local composite actions plus split `ci.yaml` and `cd.yaml` wor
 - `.github/actions/style`: run warning-as-error build validation
 - `.github/actions/analyzers`: run Roslyn analyzers explicitly
 - `.github/actions/build`: build solution in Release mode
-- `.github/actions/test`: run tests, TRX, and XPlat coverage
+- `.github/actions/test`: run tests, TRX, native Microsoft Testing Platform `.coverage`, converted Cobertura output, and optional coverage reporting/Coveralls upload
 - `.github/actions/publish`: build and optionally push Docker image
 - `.github/actions/upload-dependency-track-bom`: reusable CycloneDX BOM upload action for Dependency-Track
 - `.github/workflows/ci.yaml`: CI workflow for quality, SAST, app and image SCA, BOM upload, signing, and attestation
@@ -23,7 +23,7 @@ Sample shows repo-local composite actions plus split `ci.yaml` and `cd.yaml` wor
 - sast-semgrep: fast Semgrep SAST gate after quality validation and in parallel with CodeQL
 - sast-codeql: deep CodeQL semantic analysis for C# in parallel with Semgrep
 - sast-sonar: optional Sonar analysis in parallel with Semgrep and CodeQL when Sonar secrets are configured
-- dotnet-build-test: build, test, and test artifact upload after parallel SAST jobs pass
+- dotnet-build-test: build, test, and use the shared test action to upload Microsoft Testing Platform `.coverage` and Cobertura artifacts plus optional HTML/Markdown/lcov coverage reporting and Coveralls upload after parallel SAST jobs pass
 - app-sca-security: CycloneDX app SBOM, blocking Trivy app scan, advisory Grype published-output scan, optional blocking Snyk overlay scan
 - image-build: build and export image artifact
 - image-sca-security: `anchore/sbom-action` image SBOM, blocking Trivy image scan, advisory `anchore/scan-action` image scan, optional blocking Snyk container overlay scan
@@ -68,15 +68,15 @@ For local Dependency-Track experiments, see `deployments/dependency-track/`.
 ## Local validation
 
 ```bash
-dotnet test DevSecOpsPipelineSample.slnx
+dotnet test --solution DevSecOpsPipelineSample.slnx
 docker build -t devsecops-pipeline-sample .
 ```
 
 ## Local hooks
 
 - Husky.Net is installed as a local dotnet tool and configured under `.husky/`
-- `pre-commit` runs `dotnet format` verification
-- `pre-push` runs analyzers, Release build checks, and tests
+- `pre-commit` runs fast formatting checks only
+- `pre-push` runs Gitleaks in Docker plus analyzers, Release build checks, and tests
 - local setup after clone:
 
 ```bash
@@ -84,8 +84,10 @@ dotnet tool restore
 dotnet husky install
 ```
 
+- local Gitleaks uses `zricethezav/gitleaks:latest` so developers do not need a machine-level binary install
+- local Gitleaks runs on `pre-push` instead of `pre-commit` to keep commit latency low while still blocking secrets before they leave the workstation
 - CI keeps Gitleaks enforcement and disables Husky execution with `HUSKY=0`
-- add local Gitleaks later only if your team standardizes a machine-level install or Docker-based hook
+- CI test stage also generates a downloadable HTML coverage report artifact and publishes a markdown coverage summary to the GitHub job summary
 
 ## GitHub secrets
 
@@ -133,6 +135,8 @@ This sample keeps deployment generic on purpose. It demonstrates reusable workfl
 - Grype uses official `anchore/scan-action`
 - Snyk uses official `snyk/actions/setup` with CLI-driven scans
 - Syft SBOM generation uses official `anchore/sbom-action`
+- ReportGenerator generates HTML, markdown, and lcov coverage reports from the Cobertura file emitted by the shared test action
+- Coveralls uploads the generated lcov coverage file for external coverage history and PR coverage feedback
 - Cosign uses Sigstore keyless signing with GitHub OIDC before deployment trust checks
 - ZAP baseline adds staged passive DAST coverage after deployment
 

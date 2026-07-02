@@ -53,6 +53,12 @@ env:
   TRIVY_FAIL_SEVERITY: CRITICAL,HIGH
 
 jobs:
+  # =============================================================================
+  # STAGE 1: QUALITY GATES
+  # Fast feedback before security-heavy stages.
+  # Pipeline tools: dotnet format/style/analyzers, Gitleaks, Hadolint.
+  # Local tools: dotnet format, dotnet build, gitleaks detect, hadolint Dockerfile.
+  # =============================================================================
   quality-check:
     name: Quality check
     runs-on: ubuntu-latest
@@ -85,6 +91,12 @@ jobs:
         shell: bash
         run: docker run --rm -i hadolint/hadolint < Dockerfile
 
+  # =============================================================================
+  # STAGE 2: SAST AND PIPELINE MISCONFIGURATION SCANNING
+  # SAST (Static Application Security Testing) starts here: scan source, config, and code paths without running app.
+  # Pipeline SAST tools: Semgrep for code patterns, CodeQL for deep code-flow analysis,
+  # Sonar for secure-code and quality rules, Checkov for GitHub Actions/Docker/IaC policy checks.
+  # =============================================================================
   sast-semgrep:
     name: SAST Semgrep
     runs-on: ubuntu-latest
@@ -130,7 +142,7 @@ jobs:
           sarif_file: artifacts/security/semgrep.sarif
           category: semgrep
 
-  iac-checkov:
+  sast-iac-checkov:
     name: IaC Checkov
     runs-on: ubuntu-latest
     needs:
@@ -204,6 +216,8 @@ jobs:
         with:
           category: /language:csharp
 
+  # Sonar runs its own build, test, and coverage import flow here so analysis gets test and coverage data,
+  # while the later build-test stage remains a separate CI verification and artifact publishing gate.
   sast-sonar:
     name: SAST Sonar
     runs-on: ubuntu-latest
@@ -217,18 +231,35 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Java
+      - name: Set up JDK
         uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup .NET and restore
-        uses: ./.github/actions/setup
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
 
-      - name: Install SonarScanner for .NET
+      - name: Cache NuGet Packages
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Build.props', 'Directory.Build.targets', 'global.json', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore local tools
         shell: bash
-        run: dotnet tool install --global dotnet-sonarscanner
+        run: dotnet tool restore
+
+      - name: Restore solution
+        shell: bash
+        run: dotnet restore DevSecOpsPipelineSample.slnx
+
+      - name: Setup SonarQube Scanner
+        uses: ./.github/actions/sonar-scanner-setup
 
       - name: Resolve Sonar configuration
         id: sonar_config
@@ -260,7 +291,7 @@ jobs:
           echo "enabled=true" >> "$GITHUB_OUTPUT"
           echo "host_url=${host_url}" >> "$GITHUB_OUTPUT"
 
-      - name: Begin Sonar analysis
+      - name: Sonarqube Begin
         if: steps.sonar_config.outputs.enabled == 'true'
         shell: bash
         env:
@@ -275,38 +306,57 @@ jobs:
             "/d:sonar.token=${SONAR_TOKEN}"
             "/d:sonar.qualitygate.wait=true"
             "/d:sonar.scm.provider=git"
+            "/d:sonar.cs.vstest.reportsPaths=TestResults/Sonar/**/*.trx"
+            "/d:sonar.cs.vscoveragexml.reportsPaths=TestResults/Sonar/**/coverage.xml"
           )
 
           if [[ -n "${SONAR_ORGANIZATION}" ]]; then
             args+=("/o:${SONAR_ORGANIZATION}")
           fi
 
-          dotnet sonarscanner begin "${args[@]}"
+          ./.sonar/scanner/dotnet-sonarscanner begin "${args[@]}"
 
-      - name: Build solution for Sonar
+      - name: Build
         if: steps.sonar_config.outputs.enabled == 'true'
-        uses: ./.github/actions/build
+        shell: bash
+        run: dotnet build DevSecOpsPipelineSample.slnx --configuration Release --no-restore
 
-      - name: Test solution for Sonar
-        if: steps.sonar_config.outputs.enabled == 'true'
-        uses: ./.github/actions/test
-
-      - name: End Sonar analysis
+      - name: Test
         if: steps.sonar_config.outputs.enabled == 'true'
         shell: bash
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+          TEST_SOLUTION_PATH: DevSecOpsPipelineSample.slnx
+          TEST_CONFIGURATION: Release
+          TEST_RESULTS_DIRECTORY: TestResults/Sonar
+          TEST_COVERAGE_OUTPUT_FORMAT: xml
+          TEST_COVERAGE_OUTPUT: coverage.xml
+          TEST_ADDITIONAL_COVERAGE_OUTPUT_FORMAT: ""
+          TEST_ADDITIONAL_COVERAGE_OUTPUT: ""
+          TEST_NO_BUILD: "true"
+        run: dotnet tool run husky -- run --name test
 
+      - name: Sonarqube End
+        if: always() && steps.sonar_config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./.sonar/scanner/dotnet-sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+
+  # =============================================================================
+  # STAGE 3: BUILD AND TEST VALIDATION
+  # Confirm app still compiles and tests pass after the fast blocking quality and SAST checks.
+  # Sonar runs in parallel and is enforced later by the final security gate so test feedback arrives sooner.
+  # Pipeline tools: dotnet build/test, ReportGenerator coverage reports, Coveralls upload.
+  # Local tools: dotnet build, dotnet test, coverage collection for fast regression checks.
+  # =============================================================================
   dotnet-build-test:
     name: Dotnet build and test
     runs-on: ubuntu-latest
     needs:
       - quality-check
-      - iac-checkov
+      - sast-iac-checkov
       - sast-semgrep
       - sast-codeql
-      - sast-sonar
     permissions:
       contents: read
     steps:
@@ -320,15 +370,21 @@ jobs:
 
       - name: Test solution
         uses: ./.github/actions/test
-
-      - name: Upload test artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results
-          path: |
-            TestResults/**/*.trx
-            TestResults/**/coverage.cobertura.xml
+          no-build: true
+          skip-setup: true
+          generate-coverage-report: true
+          publish-coverage-summary: true
+          upload-coverage-artifact: true
+          upload-test-artifact: true
+          upload-coveralls: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
+  # =============================================================================
+  # STAGE 4: SCA, SBOM, AND APPLICATION ARTIFACT SECURITY
+  # SCA (Software Composition Analysis) starts here: inspect third-party packages, base components, licenses, and known CVEs.
+  # Pipeline SCA tools: Trivy, Grype, Snyk, CycloneDX SBOM, Cosign signing, Dependency-Track ingestion.
+  # =============================================================================
   dotnet-app-sca-security:
     name: Dotnet app SCA security
     runs-on: ubuntu-latest
@@ -522,6 +578,11 @@ jobs:
             artifacts/security/trivy-app.*
             artifacts/security/grype-app.*
 
+  # =============================================================================
+  # STAGE 5: CONTAINER BUILD PREPARATION
+  # Build immutable image artifact once, then reuse same artifact for later image security stages.
+  # Local tools: docker build, docker save, docker load.
+  # =============================================================================
   image-build:
     name: Build container image
     runs-on: ubuntu-latest
@@ -579,6 +640,12 @@ jobs:
           name: container-image
           path: ${{ env.IMAGE_TAR_PATH }}
 
+  # =============================================================================
+  # STAGE 6: IMAGE SCA, SBOM, AND CONTAINER SECURITY
+  # Re-run SCA against final image because base-image packages and runtime layers matter.
+  # Pipeline image security tools: Trivy, Grype, Snyk Container, CycloneDX SBOM, Cosign signing, Dependency-Track.
+  # Local image security tools: trivy image, grype, snyk container test, docker scout or equivalent, cosign verify.
+  # =============================================================================
   image-sca-security:
     name: SCA Image security
     runs-on: ubuntu-latest
@@ -783,11 +850,17 @@ jobs:
             artifacts/security/trivy-image.*
             artifacts/security/grype-image.*
 
+  # =============================================================================
+  # STAGE 7: SECURITY GATE ENFORCEMENT
+  # Central pass/fail control point. Deployment and publishing continue only when
+  # Sonar, app security, and image security all succeed.
+  # =============================================================================
   security-gate:
     name: Security gate
     if: always()
     runs-on: ubuntu-latest
     needs:
+      - sast-sonar
       - dotnet-app-sca-security
       - image-sca-security
     outputs:
@@ -799,23 +872,25 @@ jobs:
         id: evaluate
         shell: bash
         env:
+          SONAR_RESULT: ${{ needs.sast-sonar.result }}
           APP_RESULT: ${{ needs.dotnet-app-sca-security.result }}
           IMAGE_RESULT: ${{ needs.image-sca-security.result }}
         run: |
           mkdir -p reports
 
-          if [[ "${APP_RESULT}" == "success" && "${IMAGE_RESULT}" == "success" ]]; then
+          if [[ "${SONAR_RESULT}" == "success" && "${APP_RESULT}" == "success" && "${IMAGE_RESULT}" == "success" ]]; then
             GATE_STATUS="PASS"
-            GATE_MESSAGE="Application and image security stages passed."
+            GATE_MESSAGE="Sonar, application security, and image security stages passed."
           else
             GATE_STATUS="FAIL"
-            GATE_MESSAGE="One or more security stages failed."
+            GATE_MESSAGE="One or more Sonar or security stages failed."
           fi
 
           cat > reports/security-gate-report.md <<EOF
           # Security Gate Report
 
           - Gate status: ${GATE_STATUS}
+          - Sonar result: ${SONAR_RESULT}
           - App security result: ${APP_RESULT}
           - Image security result: ${IMAGE_RESULT}
           - Commit: ${GITHUB_SHA}
@@ -830,6 +905,7 @@ jobs:
             echo "## Security Gate"
             echo ""
             echo "- Gate status: ${GATE_STATUS}"
+            echo "- Sonar: ${SONAR_RESULT}"
             echo "- App security: ${APP_RESULT}"
             echo "- Image security: ${IMAGE_RESULT}"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -846,6 +922,12 @@ jobs:
           name: security-gate-report
           path: reports/security-gate-report.md
 
+  # =============================================================================
+  # STAGE 8: PUBLISH, SIGN, VERIFY, AND ATTEST
+  # Supply-chain hardening for release image.
+  # Pipeline tools: Docker Buildx, GHCR, Cosign, GitHub Attestations.
+  # Local tools: docker buildx, cosign sign/verify, gh attestation verify when validating release outputs.
+  # =============================================================================
   image-publish:
     name: Publish container image
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
@@ -1035,11 +1117,16 @@ jobs:
           subject-name: ${{ needs.image-sign.outputs.image-repository }}
           subject-digest: ${{ needs.image-sign.outputs.image-digest }}
 
+  # =============================================================================
+  # STAGE 9: EVIDENCE, REPORTING, AND PR FEEDBACK
+  # Persist artifacts needed for audit, incident response, and deployment handoff.
+  # =============================================================================
   record-and-notify:
     name: Record and notify
     if: always()
     runs-on: ubuntu-latest
     needs:
+      - sast-sonar
       - dotnet-build-test
       - dotnet-app-sca-security
       - image-sca-security
@@ -1058,6 +1145,13 @@ jobs:
         with:
           name: test-results
           path: ci-evidence/test-results
+
+      - name: Download coverage report artifact
+        if: always() && needs.dotnet-build-test.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-report
+          path: ci-evidence/coverage-report
 
       - name: Download app security artifacts
         if: always() && needs.dotnet-app-sca-security.result != 'skipped'
@@ -1084,6 +1178,7 @@ jobs:
         shell: bash
         env:
           SECURITY_GATE_STATUS: ${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}
+          SONAR_RESULT: ${{ needs.sast-sonar.result }}
           BUILD_AND_TEST_RESULT: ${{ needs.dotnet-build-test.result }}
           APP_SECURITY_RESULT: ${{ needs.dotnet-app-sca-security.result }}
           IMAGE_SECURITY_RESULT: ${{ needs.image-sca-security.result }}
@@ -1139,6 +1234,7 @@ jobs:
                 "status": "${SECURITY_GATE_STATUS}"
               },
               "stages": {
+                "sonar": "${SONAR_RESULT}",
                 "appSecurity": "${APP_SECURITY_RESULT}",
                 "imageSecurity": "${IMAGE_SECURITY_RESULT}",
                 "signatureVerification": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
@@ -1164,6 +1260,7 @@ jobs:
           # CI Pipeline Summary
 
           - Security gate: ${SECURITY_GATE_STATUS}
+          - Sonar: ${SONAR_RESULT}
           - Build and test: ${BUILD_AND_TEST_RESULT}
           - App security: ${APP_SECURITY_RESULT}
           - Image security: ${IMAGE_SECURITY_RESULT}
@@ -1184,6 +1281,7 @@ jobs:
           cat > ci-evidence/pipeline-summary.json <<EOF
           {
             "securityGate": "${SECURITY_GATE_STATUS}",
+            "sonar": "${SONAR_RESULT}",
             "buildAndTest": "${BUILD_AND_TEST_RESULT}",
             "appSecurity": "${APP_SECURITY_RESULT}",
             "imageSecurity": "${IMAGE_SECURITY_RESULT}",

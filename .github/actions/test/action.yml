@@ -1,5 +1,5 @@
 name: Test solution
-description: Run tests using the Husky-managed test task.
+description: Run dotnet tests through the Husky test task with configurable Microsoft Testing Platform coverage, optional coverage reporting, and optional Coveralls upload.
 
 inputs:
   global-json-file:
@@ -10,25 +10,161 @@ inputs:
     description: Path to solution or solution filter.
     required: false
     default: DevSecOpsPipelineSample.slnx
+  configuration:
+    description: Build configuration to test.
+    required: false
+    default: Release
   results-directory:
     description: Directory for test results.
     required: false
     default: TestResults
+  coverage-output-format:
+    description: Primary Microsoft Testing Platform coverage output format.
+    required: false
+    default: coverage
+  coverage-output:
+    description: Primary coverage output filename.
+    required: false
+    default: coverage.coverage
+  additional-coverage-output-format:
+    description: Optional converted coverage output format.
+    required: false
+    default: cobertura
+  additional-coverage-output:
+    description: Optional converted coverage output filename.
+    required: false
+    default: coverage.cobertura.xml
+  verbosity:
+    description: dotnet test verbosity.
+    required: false
+    default: minimal
+  skip-setup:
+    description: Skip shared setup because the caller already prepared the environment.
+    required: false
+    default: "false"
+  no-build:
+    description: Skip building before test execution.
+    required: false
+    default: "false"
+  generate-coverage-report:
+    description: Generate derived coverage reports with ReportGenerator.
+    required: false
+    default: "false"
+  coverage-report-directory:
+    description: Directory where ReportGenerator writes coverage reports.
+    required: false
+    default: artifacts/test-coverage
+  coverage-report-types:
+    description: ReportGenerator report types.
+    required: false
+    default: Html;lcov;MarkdownSummaryGithub
+  publish-coverage-summary:
+    description: Append the generated Markdown summary to the GitHub step summary.
+    required: false
+    default: "false"
+  upload-coverage-artifact:
+    description: Upload the generated coverage report directory as a workflow artifact.
+    required: false
+    default: "false"
+  upload-test-artifact:
+    description: Upload raw test result artifacts as a workflow artifact.
+    required: false
+    default: "false"
+  test-artifact-name:
+    description: Artifact name for uploaded raw test results.
+    required: false
+    default: test-results
+  coverage-artifact-name:
+    description: Artifact name for uploaded coverage reports.
+    required: false
+    default: coverage-report
+  upload-coveralls:
+    description: Upload generated coverage data to Coveralls.
+    required: false
+    default: "false"
+  github-token:
+    description: GitHub token used by Coveralls.
+    required: false
+    default: ""
+  coveralls-file:
+    description: Coverage file path sent to Coveralls.
+    required: false
+    default: artifacts/test-coverage/lcov.info
+  coveralls-format:
+    description: Coverage format sent to Coveralls.
+    required: false
+    default: lcov
+  coveralls-fail-on-error:
+    description: Whether Coveralls upload failure should fail the workflow.
+    required: false
+    default: "false"
 
 runs:
   using: composite
   steps:
-  # Reuses shared .NET setup before build and test tasks run.
+  # Prepare SDK, tools, and restored dependencies unless caller already did it.
   - name: Setup
+    if: inputs.skip-setup != 'true'
     uses: ./.github/actions/setup
     with:
       global-json-file: ${{ inputs.global-json-file }}
       solution-path: ${{ inputs.solution-path }}
 
-  - name: Build for tests
-    shell: bash
-    run: dotnet tool run husky -- run --name build
-
+  # Run the repo-standard Husky test task with caller-provided test and coverage settings.
   - name: Run tests
     shell: bash
+    env:
+      TEST_SOLUTION_PATH: ${{ inputs.solution-path }}
+      TEST_CONFIGURATION: ${{ inputs.configuration }}
+      TEST_RESULTS_DIRECTORY: ${{ inputs.results-directory }}
+      TEST_COVERAGE_OUTPUT_FORMAT: ${{ inputs.coverage-output-format }}
+      TEST_COVERAGE_OUTPUT: ${{ inputs.coverage-output }}
+      TEST_ADDITIONAL_COVERAGE_OUTPUT_FORMAT: ${{ inputs.additional-coverage-output-format }}
+      TEST_ADDITIONAL_COVERAGE_OUTPUT: ${{ inputs.additional-coverage-output }}
+      TEST_VERBOSITY: ${{ inputs.verbosity }}
+      TEST_NO_BUILD: ${{ inputs.no-build }}
     run: dotnet tool run husky -- run --name test
+
+  # Transform Cobertura output into human-friendly HTML, lcov, and Markdown reports when requested.
+  - name: Generate coverage reports
+    if: inputs.generate-coverage-report == 'true'
+    uses: danielpalme/ReportGenerator-GitHub-Action@049f7ec958c672fd31d5cc1cb01622dc8d2e23ab # 5.5.10
+    with:
+      reports: ${{ inputs.results-directory }}/**/coverage.cobertura.xml
+      targetdir: ${{ inputs.coverage-report-directory }}
+      reporttypes: ${{ inputs.coverage-report-types }}
+
+  # Append the generated Markdown coverage summary to the GitHub Actions job summary.
+  - name: Publish coverage summary
+    if: inputs.publish-coverage-summary == 'true'
+    shell: bash
+    run: cat "${{ inputs.coverage-report-directory }}/SummaryGithub.md" >> "$GITHUB_STEP_SUMMARY"
+
+  # Persist generated coverage reports so later jobs or users can download them from the workflow run.
+  - name: Upload coverage report artifact
+    if: inputs.upload-coverage-artifact == 'true'
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    with:
+      name: ${{ inputs.coverage-artifact-name }}
+      path: ${{ inputs.coverage-report-directory }}/**
+
+  # Persist raw test outputs for troubleshooting and downstream evidence collection.
+  - name: Upload test artifacts
+    if: inputs.upload-test-artifact == 'true'
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    with:
+      name: ${{ inputs.test-artifact-name }}
+      path: |
+        ${{ inputs.results-directory }}/**/*.trx
+        ${{ inputs.results-directory }}/**/*.coverage
+        ${{ inputs.results-directory }}/**/coverage.cobertura.xml
+
+  # Send selected coverage data to Coveralls for external history and PR feedback.
+  - name: Upload coverage to Coveralls
+    if: inputs.upload-coveralls == 'true'
+    uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
+    with:
+      github-token: ${{ inputs.github-token }}
+      file: ${{ inputs.coveralls-file }}
+      format: ${{ inputs.coveralls-format }}
+      fail-on-error: ${{ inputs.coveralls-fail-on-error }}

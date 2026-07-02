@@ -130,22 +130,22 @@ App SBOM:
 
 ```bash
 curl -fsS -X POST "http://localhost:8081/api/v1/bom" \
-	-H "X-Api-Key: YOUR_API_KEY" \
-	-F "autoCreate=true" \
-	-F "projectName=devsecops-pipeline-sample" \
-	-F "projectVersion=COMMIT_SHA" \
-	-F "bom=@path/to/bom.json"
+  -H "X-Api-Key: ${DEPENDENCY_TRACK_API_KEY}" \
+  -F "autoCreate=true" \
+  -F "projectName=devsecops-pipeline-sample" \
+  -F "projectVersion=COMMIT_SHA" \
+  -F "bom=@path/to/bom.json"
 ```
 
 Image SBOM:
 
 ```bash
 curl -fsS -X POST "http://localhost:8081/api/v1/bom" \
-	-H "X-Api-Key: YOUR_API_KEY" \
-	-F "autoCreate=true" \
-	-F "projectName=devsecops-pipeline-sample-image" \
-	-F "projectVersion=COMMIT_SHA" \
-	-F "bom=@path/to/image.cdx.json"
+  -H "X-Api-Key: ${DEPENDENCY_TRACK_API_KEY}" \
+  -F "autoCreate=true" \
+  -F "projectName=devsecops-pipeline-sample-image" \
+  -F "projectVersion=COMMIT_SHA" \
+  -F "bom=@path/to/image.cdx.json"
 ```
 
 ### Where to get the two SBOM files

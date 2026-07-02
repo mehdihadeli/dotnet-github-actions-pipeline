@@ -52,7 +52,7 @@
     },
     {
       "name": "build",
-      "group": "pre-commit",
+      "group": "pre-push",
       "command": "dotnet",
       "args": [
         "build",
@@ -73,22 +73,19 @@
       ]
     },
     {
-      "name": "test",
-      "command": "dotnet",
+      "name": "gitleaks",
+      "group": "pre-push",
+      "command": "sh",
       "args": [
-        "test",
-        "DevSecOpsPipelineSample.slnx",
-        "--configuration",
-        "Release",
-        "--no-build",
-        "--logger",
-        "trx",
-        "--results-directory",
-        "TestResults",
-        "--collect:XPlat Code Coverage",
-        "--verbosity",
-        "minimal"
-      ],
+        "-c",
+        "repo_root=\"$(git rev-parse --show-toplevel)\" && MSYS_NO_PATHCONV=1 docker run --rm -v \"$repo_root:/repo\" -w /repo zricethezav/gitleaks:latest dir --no-banner --redact --verbose ."
+      ]
+    },
+    {
+      "name": "test",
+      "group": "pre-push",
+      "command": "sh",
+      "args": ["scripts/run-tests.sh"],
       "include": [
         "src/**/*",
         "tests/**/*",

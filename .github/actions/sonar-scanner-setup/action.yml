@@ -1,0 +1,31 @@
+name: Setup SonarQube scanner
+description: Cache and install the SonarScanner for .NET used by the CI Sonar job.
+
+runs:
+  using: composite
+  steps:
+  - name: Cache Sonar packages
+    uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+    with:
+      path: ~/.sonar/cache
+      key: ${{ runner.os }}-sonar
+      restore-keys: |
+        ${{ runner.os }}-sonar
+
+  - name: Cache Sonar scanner
+    id: cache-sonar-scanner
+    uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+    with:
+      path: ./.sonar/scanner
+      key: ${{ runner.os }}-sonar-scanner-${{ hashFiles('dotnet-tools.json') }}
+      restore-keys: |
+        ${{ runner.os }}-sonar-scanner-
+
+  - name: Install Sonar scanner
+    if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
+    shell: bash
+    env:
+      SCANNER_PATH: ./.sonar/scanner
+    run: |
+      mkdir -p "$SCANNER_PATH"
+      dotnet tool update dotnet-sonarscanner --tool-path "$SCANNER_PATH"
