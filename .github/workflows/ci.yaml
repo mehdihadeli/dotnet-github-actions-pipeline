@@ -215,13 +215,12 @@ jobs:
           args: >-
             .
             --severity-threshold=high
-            --sarif-file-output=artifacts/security/snyk-iac.sarif
 
       - name: Upload Snyk IaC SARIF
         if: always() && steps.snyk_iac_config.outputs.enabled == 'true'
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
-          sarif_file: artifacts/security/snyk-iac.sarif
+          sarif_file: snyk.sarif
           category: snyk-iac
 
       - name: Monitor IaC in Snyk
