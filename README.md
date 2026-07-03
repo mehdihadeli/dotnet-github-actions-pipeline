@@ -22,7 +22,7 @@ Sample shows repo-local composite actions plus split `ci.yaml` and `cd.yaml` wor
 - iac-checkov: Checkov scans GitHub Actions, Dockerfile, and secrets-style IaC/pipeline config
 - sast-semgrep: fast Semgrep SAST gate after quality validation and in parallel with CodeQL
 - sast-codeql: deep CodeQL semantic analysis for C# in parallel with Semgrep
-- sast-sonar: optional Sonar analysis in parallel with Semgrep and CodeQL when Sonar secrets are configured
+- sast-sonar: optional Sonar analysis in parallel with Semgrep and CodeQL when Sonar secrets are configured, and for SonarCloud only when `SONAR_CI_ENABLED=true`
 - dotnet-build-test: build, test, and use the shared test action to upload Microsoft Testing Platform `.coverage` and Cobertura artifacts plus optional HTML/Markdown/lcov coverage reporting and Coveralls upload after parallel SAST jobs pass
 - app-sca-security: CycloneDX app SBOM, blocking Trivy app scan, advisory Grype published-output scan, optional blocking Snyk overlay scan
 - image-build: build and export image artifact
@@ -112,6 +112,10 @@ Optional integration secrets:
 - `SONAR_HOST_URL` when you use self-hosted SonarQube; defaults to `https://sonarcloud.io` if omitted
 - `SNYK_TOKEN` if you later add managed Snyk overlay scans
 - `SONAR_TOKEN` when you enable Sonar analysis
+
+Optional repository variables:
+
+- `SONAR_CI_ENABLED=true` only after disabling SonarCloud Automatic Analysis for the project; otherwise the `sast-sonar` job skips CI-based SonarCloud analysis to avoid duplicate-analysis failures
 
 Cosign keyless signing uses GitHub OIDC and does not require a private signing key secret.
 
