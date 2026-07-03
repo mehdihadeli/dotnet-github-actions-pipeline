@@ -241,7 +241,7 @@ jobs:
           category: snyk-iac
 
       - name: Monitor IaC in Snyk
-        if: always() && steps.snyk_iac_config.outputs.enabled == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: always() && steps.snyk_iac_config.outputs.enabled == 'true'
         uses: snyk/actions/iac@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -654,7 +654,7 @@ jobs:
           category: snyk-app
 
       - name: Monitor app in Snyk
-        if: always() && steps.snyk_app_config.outputs.enabled == 'true' && github.ref == 'refs/heads/main'
+        if: always() && steps.snyk_app_config.outputs.enabled == 'true'
         shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -946,7 +946,7 @@ jobs:
           category: snyk-image
 
       - name: Monitor image in Snyk
-        if: always() && steps.snyk_image_config.outputs.enabled == 'true' && github.ref == 'refs/heads/main'
+        if: always() && steps.snyk_image_config.outputs.enabled == 'true'
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
