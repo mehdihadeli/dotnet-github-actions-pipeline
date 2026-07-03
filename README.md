@@ -76,17 +76,19 @@ docker build -t devsecops-pipeline-sample .
 
 - Husky.Net is installed as a local dotnet tool and configured under `.husky/`
 - `pre-commit` runs fast formatting checks only
-- `pre-push` runs Gitleaks in Docker plus analyzers, Release build checks, and tests
+- `pre-push` runs Gitleaks in Docker plus analyzers, a local Release build that can restore if needed, and tests
 - local setup after clone:
 
 ```bash
-dotnet tool restore
-dotnet husky install
+dotnet tool run husky -- run --name setup-tools-restore
+dotnet tool run husky -- run --name setup-husky-install
+SOLUTION_PATH=DevSecOpsPipelineSample.slnx dotnet tool run husky -- run --name setup-solution-restore
 ```
 
 - local Gitleaks uses `zricethezav/gitleaks:latest` so developers do not need a machine-level binary install
 - if Docker is missing or the daemon is stopped, the pre-push hook fails with a targeted message before blocking the push
 - local Gitleaks runs on `pre-push` instead of `pre-commit` to keep commit latency low while still blocking secrets before they leave the workstation
+- Husky `build` is the local variant and allows restore; Husky `build-ci` is the CI-only variant and assumes setup already restored dependencies
 - CI keeps Gitleaks enforcement and disables Husky execution with `HUSKY=0`
 - CI test stage also generates a downloadable HTML coverage report artifact and publishes a markdown coverage summary to the GitHub job summary
 

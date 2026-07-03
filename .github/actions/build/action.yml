@@ -23,4 +23,7 @@ runs:
 
   - name: Build
     shell: bash
-    run: dotnet tool run husky -- run --name build
+    env:
+      SOLUTION_PATH: ${{ inputs.solution-path }}
+      BUILD_CONFIGURATION: Release
+    run: dotnet tool run husky -- run --name build-ci

@@ -51,16 +51,30 @@
       ]
     },
     {
+      "name": "setup-tools-restore",
+      "command": "dotnet",
+      "args": ["tool", "restore"]
+    },
+    {
+      "name": "setup-husky-install",
+      "command": "dotnet",
+      "args": ["tool", "run", "husky", "--", "install"]
+    },
+    {
+      "name": "setup-solution-restore",
+      "command": "bash",
+      "args": [
+        "-c",
+        "dotnet restore \"${SOLUTION_PATH:-DevSecOpsPipelineSample.slnx}\""
+      ]
+    },
+    {
       "name": "build",
       "group": "pre-push",
-      "command": "dotnet",
+      "command": "bash",
       "args": [
-        "build",
-        "DevSecOpsPipelineSample.slnx",
-        "--no-restore",
-        "--configuration",
-        "Release",
-        "/warnaserror"
+        "-c",
+        "dotnet build \"${SOLUTION_PATH:-DevSecOpsPipelineSample.slnx}\" --configuration \"${BUILD_CONFIGURATION:-Release}\" -warnaserror"
       ],
       "include": [
         "**/*.cs",
@@ -71,6 +85,24 @@
         "**/*.sln",
         "**/*.slnx"
       ]
+    },
+    {
+      "name": "build-ci",
+      "command": "bash",
+      "args": [
+        "-c",
+        "dotnet build \"${SOLUTION_PATH:-DevSecOpsPipelineSample.slnx}\" --no-restore --configuration \"${BUILD_CONFIGURATION:-Release}\" -warnaserror"
+      ],
+      "include": [
+        "**/*.cs",
+        "**/*.csproj",
+        "**/*.props",
+        "**/*.targets",
+        "**/*.editorconfig",
+        "**/*.sln",
+        "**/*.slnx"
+      ],
+      "group": "ci"
     },
     {
       "name": "gitleaks",
