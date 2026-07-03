@@ -60,7 +60,7 @@ jobs:
   # Local tools: dotnet format, dotnet build, gitleaks detect, hadolint Dockerfile.
   # =============================================================================
   quality-check:
-    name: Quality check
+    name: quality-check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -98,7 +98,7 @@ jobs:
   # Sonar for secure-code and quality rules, Checkov for GitHub Actions/Docker/IaC policy checks.
   # =============================================================================
   sast-semgrep:
-    name: SAST Semgrep
+    name: sast-semgrep
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -143,7 +143,7 @@ jobs:
           category: semgrep
 
   sast-iac-checkov:
-    name: IaC Checkov
+    name: sast-iac-checkov
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -188,7 +188,7 @@ jobs:
           exit 1
 
   sast-codeql:
-    name: SAST CodeQL
+    name: sast-codeql
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -219,7 +219,7 @@ jobs:
   # Sonar runs its own build, test, and coverage import flow here so analysis gets test and coverage data,
   # while the later build-test stage remains a separate CI verification and artifact publishing gate.
   sast-sonar:
-    name: SAST Sonar
+    name: sast-sonar
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -354,7 +354,7 @@ jobs:
   # Local tools: dotnet build, dotnet test, coverage collection for fast regression checks.
   # =============================================================================
   dotnet-build-test:
-    name: Dotnet build and test
+    name: dotnet-build-test
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -390,7 +390,7 @@ jobs:
   # Pipeline SCA tools: Trivy, Grype, Snyk, CycloneDX SBOM, Cosign signing, Dependency-Track ingestion.
   # =============================================================================
   dotnet-app-sca-security:
-    name: Dotnet app SCA security
+    name: dotnet-app-sca-security
     runs-on: ubuntu-latest
     needs:
       - dotnet-build-test
@@ -588,7 +588,7 @@ jobs:
   # Local tools: docker build, docker save, docker load.
   # =============================================================================
   image-build:
-    name: Build container image
+    name: image-build
     runs-on: ubuntu-latest
     needs:
       - dotnet-app-sca-security
@@ -651,7 +651,7 @@ jobs:
   # Local image security tools: trivy image, grype, snyk container test, docker scout or equivalent, cosign verify.
   # =============================================================================
   image-sca-security:
-    name: SCA Image security
+    name: image-sca-security
     runs-on: ubuntu-latest
     needs:
       - image-build
@@ -860,7 +860,7 @@ jobs:
   # Sonar, app security, and image security all succeed.
   # =============================================================================
   security-gate:
-    name: Security gate
+    name: security-gate
     if: always()
     runs-on: ubuntu-latest
     needs:
@@ -933,7 +933,7 @@ jobs:
   # Local tools: docker buildx, cosign sign/verify, gh attestation verify when validating release outputs.
   # =============================================================================
   image-publish:
-    name: Publish container image
+    name: image-publish
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - security-gate
@@ -1000,7 +1000,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   image-sign:
-    name: Sign container image
+    name: image-sign
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-publish
@@ -1068,7 +1068,7 @@ jobs:
           echo "image_with_digest=${IMAGE_WITH_DIGEST}" >> "$GITHUB_OUTPUT"
 
   verify-image-signature:
-    name: Verify image signature
+    name: verify-image-signature
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-sign
@@ -1105,7 +1105,7 @@ jobs:
           echo "image_with_digest=$IMAGE_WITH_DIGEST" >> "$GITHUB_OUTPUT"
 
   attest:
-    name: Attest image provenance
+    name: attest
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-sign
@@ -1126,7 +1126,7 @@ jobs:
   # Persist artifacts needed for audit, incident response, and deployment handoff.
   # =============================================================================
   record-and-notify:
-    name: Record and notify
+    name: record-and-notify
     if: always()
     runs-on: ubuntu-latest
     needs:

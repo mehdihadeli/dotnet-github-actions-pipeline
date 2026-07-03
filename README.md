@@ -85,6 +85,7 @@ dotnet husky install
 ```
 
 - local Gitleaks uses `zricethezav/gitleaks:latest` so developers do not need a machine-level binary install
+- if Docker is missing or the daemon is stopped, the pre-push hook fails with a targeted message before blocking the push
 - local Gitleaks runs on `pre-push` instead of `pre-commit` to keep commit latency low while still blocking secrets before they leave the workstation
 - CI keeps Gitleaks enforcement and disables Husky execution with `HUSKY=0`
 - CI test stage also generates a downloadable HTML coverage report artifact and publishes a markdown coverage summary to the GitHub job summary
