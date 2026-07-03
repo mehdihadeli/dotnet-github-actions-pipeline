@@ -22,7 +22,7 @@ runs:
 
   - name: Restore local tools
     shell: bash
-    run: dotnet tool run husky -- run --name setup-tools-restore
+    run: dotnet tool restore
 
   - name: Configure Husky
     shell: bash
