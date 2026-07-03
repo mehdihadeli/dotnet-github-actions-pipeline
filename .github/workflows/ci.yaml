@@ -30,6 +30,11 @@ on:
       - dotnet-tools.json
   workflow_dispatch:
     inputs:
+      sonar_enabled:
+        description: Whether to run Sonar analysis.
+        type: boolean
+        required: true
+        default: true
       publish_image:
         description: Whether to publish container image.
         type: boolean
@@ -273,7 +278,7 @@ jobs:
           SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
           SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          SONAR_CI_ENABLED: ${{ vars.SONAR_CI_ENABLED }}
+          SONAR_CI_ENABLED: ${{ github.event_name == 'workflow_dispatch' && (inputs.sonar_enabled && 'true' || 'false') || vars.SONAR_CI_ENABLED || 'true' }}
         run: |
           if [[ -z "${SONAR_TOKEN}" ]]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -282,11 +287,11 @@ jobs:
           fi
 
           host_url="${SONAR_HOST_URL:-https://sonarcloud.io}"
-          sonar_ci_enabled="$(printf '%s' "${SONAR_CI_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')"
+          sonar_ci_enabled="$(printf '%s' "${SONAR_CI_ENABLED:-true}" | tr '[:upper:]' '[:lower:]')"
 
-          if [[ "${host_url}" == "https://sonarcloud.io" && "${sonar_ci_enabled}" != "true" ]]; then
+          if [[ "${sonar_ci_enabled}" != "true" ]]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping CI-based SonarCloud analysis. Set the repository variable SONAR_CI_ENABLED=true only after disabling Automatic Analysis for the project."
+            echo "::notice::Skipping Sonar analysis because Sonar CI is disabled for this run."
             exit 0
           fi
 
