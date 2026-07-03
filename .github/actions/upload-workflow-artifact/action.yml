@@ -1,0 +1,19 @@
+name: Upload workflow artifact
+description: Upload a named artifact from the workflow workspace.
+
+inputs:
+  name:
+    description: Artifact name.
+    required: true
+  path:
+    description: Artifact file or directory path.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Upload artifact
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    with:
+      name: ${{ inputs.name }}
+      path: ${{ inputs.path }}

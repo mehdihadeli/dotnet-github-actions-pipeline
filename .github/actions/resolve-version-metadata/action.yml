@@ -1,0 +1,53 @@
+name: Resolve version metadata
+description: Resolve shared build and image version metadata from git refs.
+
+inputs:
+  registry:
+    description: Container registry hostname.
+    required: false
+    default: ghcr.io
+  repository-name:
+    description: Repository name to normalize for image naming.
+    required: false
+    default: ${{ github.repository }}
+
+outputs:
+  image_name:
+    description: Lowercased repository name.
+    value: ${{ steps.resolve.outputs.image_name }}
+  image_tag:
+    description: Shared tag or short SHA version.
+    value: ${{ steps.resolve.outputs.image_tag }}
+  image_ref:
+    description: Full image reference.
+    value: ${{ steps.resolve.outputs.image_ref }}
+  build_version:
+    description: Shared version used across publishing, evidence, and Dependency-Track.
+    value: ${{ steps.resolve.outputs.build_version }}
+
+runs:
+  using: composite
+  steps:
+  - name: Resolve metadata
+    id: resolve
+    shell: bash
+    env:
+      INPUT_REGISTRY: ${{ inputs.registry }}
+      INPUT_REPOSITORY_NAME: ${{ inputs.repository-name }}
+      GITHUB_REF_TYPE: ${{ github.ref_type }}
+      GITHUB_REF_NAME: ${{ github.ref_name }}
+      GITHUB_SHA: ${{ github.sha }}
+    run: |
+      image_name="$(echo "$INPUT_REPOSITORY_NAME" | tr '[:upper:]' '[:lower:]')"
+      short_sha="${GITHUB_SHA::7}"
+
+      if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+        build_version="$GITHUB_REF_NAME"
+      else
+        build_version="$short_sha"
+      fi
+
+      echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+      echo "image_tag=${build_version}" >> "$GITHUB_OUTPUT"
+      echo "build_version=${build_version}" >> "$GITHUB_OUTPUT"
+      echo "image_ref=${INPUT_REGISTRY}/${image_name}:${build_version}" >> "$GITHUB_OUTPUT"

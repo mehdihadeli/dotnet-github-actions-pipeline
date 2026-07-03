@@ -1,0 +1,178 @@
+name: Create CI evidence
+description: Generate CI evidence files and append the markdown summary to the workflow summary.
+
+inputs:
+  output-directory:
+    description: Directory where evidence files will be written.
+    required: false
+    default: ci-evidence
+  build-version:
+    description: Shared build version resolved from tag or short SHA.
+    required: true
+  security-gate-status:
+    description: Security gate status.
+    required: true
+  sonar-result:
+    description: Sonar job result.
+    required: true
+  build-and-test-result:
+    description: Build and test job result.
+    required: true
+  app-security-result:
+    description: App security job result.
+    required: true
+  image-security-result:
+    description: Image security job result.
+    required: true
+  image-publish-result:
+    description: Image publish job result.
+    required: true
+  image-sign-result:
+    description: Image sign job result.
+    required: true
+  verify-image-signature-result:
+    description: Image signature verification job result.
+    required: true
+  attest-result:
+    description: Attestation job result.
+    required: true
+  published-image-ref:
+    description: Published image reference.
+    required: false
+    default: ""
+  published-image-digest:
+    description: Published image digest.
+    required: false
+    default: ""
+  signed-image-with-digest:
+    description: Signed image digest reference.
+    required: false
+    default: ""
+  verified-image-with-digest:
+    description: Verified image digest reference.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+  - name: Generate evidence bundle
+    shell: bash
+    env:
+      OUTPUT_DIRECTORY: ${{ inputs.output-directory }}
+      BUILD_VERSION: ${{ inputs.build-version }}
+      SECURITY_GATE_STATUS: ${{ inputs.security-gate-status }}
+      SONAR_RESULT: ${{ inputs.sonar-result }}
+      BUILD_AND_TEST_RESULT: ${{ inputs.build-and-test-result }}
+      APP_SECURITY_RESULT: ${{ inputs.app-security-result }}
+      IMAGE_SECURITY_RESULT: ${{ inputs.image-security-result }}
+      IMAGE_PUBLISH_RESULT: ${{ inputs.image-publish-result }}
+      IMAGE_SIGN_RESULT: ${{ inputs.image-sign-result }}
+      VERIFY_IMAGE_SIGNATURE_RESULT: ${{ inputs.verify-image-signature-result }}
+      ATTEST_RESULT: ${{ inputs.attest-result }}
+      PUBLISHED_IMAGE_REF: ${{ inputs.published-image-ref }}
+      PUBLISHED_IMAGE_DIGEST: ${{ inputs.published-image-digest }}
+      SIGNED_IMAGE_WITH_DIGEST: ${{ inputs.signed-image-with-digest }}
+      VERIFIED_IMAGE_WITH_DIGEST: ${{ inputs.verified-image-with-digest }}
+    run: |
+      mkdir -p "$OUTPUT_DIRECTORY"
+
+      AUTO_DEPLOY="false"
+      TARGET_ENVIRONMENT=""
+      DEPLOY_SOURCE="none"
+
+      if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+        AUTO_DEPLOY="true"
+        TARGET_ENVIRONMENT="dev"
+        DEPLOY_SOURCE="main"
+      elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
+        AUTO_DEPLOY="true"
+        TARGET_ENVIRONMENT="prod"
+        DEPLOY_SOURCE="tag"
+      fi
+
+      cat > "$OUTPUT_DIRECTORY/build-metadata.json" <<EOF
+      {
+        "build": {
+          "name": "DevSecOpsPipelineSample",
+          "number": "${GITHUB_RUN_NUMBER}",
+          "version": "${BUILD_VERSION}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "vcs": {
+            "revision": "${GITHUB_SHA}",
+            "branch": "${GITHUB_REF_NAME}",
+            "url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          }
+        },
+        "security": {
+          "gate": {
+            "status": "${SECURITY_GATE_STATUS}"
+          },
+          "stages": {
+            "sonar": "${SONAR_RESULT}",
+            "appSecurity": "${APP_SECURITY_RESULT}",
+            "imageSecurity": "${IMAGE_SECURITY_RESULT}",
+            "signatureVerification": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
+            "attestation": "${ATTEST_RESULT}"
+          }
+        },
+        "artifacts": {
+          "publishedImageRef": "${PUBLISHED_IMAGE_REF}",
+          "publishedImageDigest": "${PUBLISHED_IMAGE_DIGEST}",
+          "signedImageWithDigest": "${SIGNED_IMAGE_WITH_DIGEST}",
+          "verifiedImageWithDigest": "${VERIFIED_IMAGE_WITH_DIGEST}",
+          "ciEvidenceArtifact": "ci-evidence"
+        },
+        "deployment": {
+          "autoDeploy": ${AUTO_DEPLOY},
+          "targetEnvironment": "${TARGET_ENVIRONMENT}",
+          "source": "${DEPLOY_SOURCE}"
+        }
+      }
+      EOF
+
+      cat > "$OUTPUT_DIRECTORY/pipeline-summary.md" <<EOF
+      # CI Pipeline Summary
+
+      - Security gate: ${SECURITY_GATE_STATUS}
+      - Sonar: ${SONAR_RESULT}
+      - Build and test: ${BUILD_AND_TEST_RESULT}
+      - App security: ${APP_SECURITY_RESULT}
+      - Image security: ${IMAGE_SECURITY_RESULT}
+      - Image publish: ${IMAGE_PUBLISH_RESULT}
+      - Image sign: ${IMAGE_SIGN_RESULT}
+      - Signature verify: ${VERIFY_IMAGE_SIGNATURE_RESULT}
+      - Attest: ${ATTEST_RESULT}
+      - Published image ref: ${PUBLISHED_IMAGE_REF}
+      - Published image digest: ${PUBLISHED_IMAGE_DIGEST}
+      - Signed image digest ref: ${SIGNED_IMAGE_WITH_DIGEST}
+      - Verified image digest ref: ${VERIFIED_IMAGE_WITH_DIGEST}
+      - Auto deploy: ${AUTO_DEPLOY}
+      - Target environment: ${TARGET_ENVIRONMENT}
+      - Commit: ${GITHUB_SHA}
+      - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+      EOF
+
+      cat > "$OUTPUT_DIRECTORY/pipeline-summary.json" <<EOF
+      {
+        "securityGate": "${SECURITY_GATE_STATUS}",
+        "sonar": "${SONAR_RESULT}",
+        "buildAndTest": "${BUILD_AND_TEST_RESULT}",
+        "appSecurity": "${APP_SECURITY_RESULT}",
+        "imageSecurity": "${IMAGE_SECURITY_RESULT}",
+        "imagePublish": "${IMAGE_PUBLISH_RESULT}",
+        "imageSign": "${IMAGE_SIGN_RESULT}",
+        "verifyImageSignature": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
+        "attest": "${ATTEST_RESULT}",
+        "publishedImageRef": "${PUBLISHED_IMAGE_REF}",
+        "publishedImageDigest": "${PUBLISHED_IMAGE_DIGEST}",
+        "signedImageWithDigest": "${SIGNED_IMAGE_WITH_DIGEST}",
+        "verifiedImageWithDigest": "${VERIFIED_IMAGE_WITH_DIGEST}",
+        "autoDeploy": ${AUTO_DEPLOY},
+        "targetEnvironment": "${TARGET_ENVIRONMENT}",
+        "commit": "${GITHUB_SHA}",
+        "runUrl": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+      }
+      EOF
+
+      cat "$OUTPUT_DIRECTORY/pipeline-summary.md" >> "$GITHUB_STEP_SUMMARY"

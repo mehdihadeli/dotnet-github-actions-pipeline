@@ -20,7 +20,7 @@ jobs:
   # Local tools: gh api, jq, unzip for inspecting CI evidence bundles before deployment.
   # =============================================================================
   prepare-deployment:
-    name: Prepare deployment
+    name: "Stage 1: Deployment Intake"
     runs-on: ubuntu-latest
     outputs:
       deploy-enabled: ${{ steps.prepare.outputs.deploy_enabled }}
@@ -76,7 +76,7 @@ jobs:
   # Local tool: cosign verify for independent release validation.
   # =============================================================================
   verify-image-signature:
-    name: Verify image signature
+    name: "Stage 2: Verify Image Signature"
     if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
     needs:
       - prepare-deployment
@@ -120,7 +120,7 @@ jobs:
   # Local tools: az login, az containerapp update, az containerapp show.
   # =============================================================================
   deploy:
-    name: Deploy to Azure Container Apps
+    name: "Stage 3: Deploy to Staged Runtime"
     if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
     needs:
       - prepare-deployment
@@ -227,7 +227,7 @@ jobs:
   # Local tool: zap-baseline.py or OWASP ZAP desktop/proxy against staged endpoint.
   # =============================================================================
   zap-baseline:
-    name: ZAP baseline staged API scan
+    name: "Stage 4: DAST - ZAP Baseline"
     if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
     needs:
       - prepare-deployment
@@ -251,7 +251,7 @@ jobs:
   # Persist deploy result, verified digest, and DAST outcome for release traceability.
   # =============================================================================
   record-and-notify:
-    name: Record and notify
+    name: "Stage 5: Record & Notify"
     if: always()
     runs-on: ubuntu-latest
     needs:

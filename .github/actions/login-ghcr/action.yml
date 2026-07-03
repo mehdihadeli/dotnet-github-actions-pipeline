@@ -1,0 +1,24 @@
+name: Login GHCR
+description: Authenticate to GitHub Container Registry using the workflow actor and token.
+
+inputs:
+  registry:
+    description: Container registry hostname.
+    required: false
+    default: ghcr.io
+  username:
+    description: Registry username.
+    required: true
+  password:
+    description: Registry password or token.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Login to container registry
+    uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+    with:
+      registry: ${{ inputs.registry }}
+      username: ${{ inputs.username }}
+      password: ${{ inputs.password }}

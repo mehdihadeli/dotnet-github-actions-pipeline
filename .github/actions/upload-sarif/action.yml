@@ -1,0 +1,19 @@
+name: Upload SARIF
+description: Upload a SARIF report with a category to GitHub code scanning.
+
+inputs:
+  sarif-file:
+    description: Path to the SARIF file.
+    required: true
+  category:
+    description: Code scanning category.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Upload SARIF report
+    uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+    with:
+      sarif_file: ${{ inputs.sarif-file }}
+      category: ${{ inputs.category }}

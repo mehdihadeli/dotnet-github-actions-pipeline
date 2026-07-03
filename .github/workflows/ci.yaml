@@ -65,13 +65,13 @@ jobs:
   # Local tools: dotnet format, dotnet build, gitleaks detect, hadolint Dockerfile.
   # =============================================================================
   quality-check:
-    name: quality-check
+    name: "Stage 1: Quality Gates"
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: ./.github/actions/checkout-code
         with:
           fetch-depth: 0
 
@@ -103,7 +103,7 @@ jobs:
   # Sonar for secure-code and quality rules, Checkov for GitHub Actions/Docker/IaC policy checks.
   # =============================================================================
   sast-semgrep:
-    name: sast-semgrep
+    name: "Stage 2: SAST - Semgrep"
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -112,9 +112,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
+        uses: ./.github/actions/checkout-code
 
       - name: Prepare Semgrep artifacts
         uses: ./.github/actions/prepare-directories
@@ -142,13 +140,13 @@ jobs:
 
       - name: Upload Semgrep SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/semgrep.sarif
+          sarif-file: artifacts/security/semgrep.sarif
           category: semgrep
 
   sast-iac-checkov:
-    name: sast-iac-checkov
+    name: "Stage 2: IaC & Pipeline Scan"
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -157,9 +155,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
+        uses: ./.github/actions/checkout-code
 
       - name: Prepare Checkov artifacts
         uses: ./.github/actions/prepare-directories
@@ -169,34 +165,9 @@ jobs:
 
       - name: Resolve Snyk IaC configuration
         id: snyk_iac_config
-        shell: bash
+        uses: ./.github/actions/resolve-snyk-iac-config
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          if [[ -z "${SNYK_TOKEN}" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "SNYK_TOKEN not configured. Skip Snyk IaC scan."
-            exit 0
-          fi
-
-          has_supported_snyk_iac_file=false
-
-          while IFS= read -r file; do
-            case "$file" in
-              *.tf|*.tf.json|Chart.yaml|charts/*|helm/*|k8s/*|kubernetes/*|manifests/*)
-                has_supported_snyk_iac_file=true
-                break
-                ;;
-            esac
-          done < <(git ls-files)
-
-          if [[ "$has_supported_snyk_iac_file" != 'true' ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "No Snyk-supported IaC files found in tracked repository contents. Skip Snyk IaC scan."
-            exit 0
-          fi
-
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       # Snyk GitHub Actions docs:
       # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
@@ -216,9 +187,9 @@ jobs:
 
       - name: Upload Checkov SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/checkov.sarif
+          sarif-file: artifacts/security/checkov.sarif
           category: checkov
 
       - name: Run Snyk IaC scan
@@ -235,36 +206,17 @@ jobs:
 
       - name: Upload Snyk IaC SARIF
         if: always() && steps.snyk_iac_config.outputs.enabled == 'true'
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: snyk.sarif
+          sarif-file: snyk.sarif
           category: snyk-iac
 
       - name: Resolve Snyk IaC monitor metadata
         if: steps.snyk_iac_config.outputs.enabled == 'true'
         id: snyk_iac_meta
-        shell: bash
-        env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_REF_TYPE: ${{ github.ref_type }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          short_sha="${GITHUB_SHA::7}"
-          ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
-
-          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
-            target_reference="$ref_slug"
-          else
-            target_reference="$short_sha"
-          fi
-
-          project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},kind=iac"
-
-          echo "target_reference=$target_reference" >> "$GITHUB_OUTPUT"
-          echo "project_tags=$project_tags" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/resolve-snyk-monitor-metadata
+        with:
+          kind: iac
 
       - name: Monitor IaC in Snyk
         if: always() && steps.snyk_iac_config.outputs.enabled == 'true'
@@ -296,7 +248,7 @@ jobs:
           exit 0
 
   sast-codeql:
-    name: sast-codeql
+    name: "Stage 2: SAST - CodeQL"
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -305,9 +257,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
+        uses: ./.github/actions/checkout-code
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
@@ -327,7 +277,7 @@ jobs:
   # Sonar runs its own build, test, and coverage import flow here so analysis gets test and coverage data,
   # while the later build-test stage remains a separate CI verification and artifact publishing gate.
   sast-sonar:
-    name: sast-sonar
+    name: "Stage 2: SAST - Sonar"
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -335,28 +285,9 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: ./.github/actions/checkout-code
         with:
           fetch-depth: 0
-
-      - name: Set up JDK
-        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Setup .NET Core
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
-        with:
-          global-json-file: global.json
-
-      - name: Cache NuGet Packages
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Build.props', 'Directory.Build.targets', 'global.json', '**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
       - name: Restore local tools
         shell: bash
@@ -470,7 +401,7 @@ jobs:
   # Local tools: dotnet build, dotnet test, coverage collection for fast regression checks.
   # =============================================================================
   dotnet-build-test:
-    name: dotnet-build-test
+    name: "Stage 3: Build & Test Validation"
     runs-on: ubuntu-latest
     needs:
       - quality-check
@@ -481,9 +412,9 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: ./.github/actions/checkout-code
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Build solution
         uses: ./.github/actions/build
@@ -501,12 +432,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # =============================================================================
-  # STAGE 4: SCA, SBOM, AND APPLICATION ARTIFACT SECURITY
+  # STAGE 4: APPLICATION SCA, SBOM, AND ARTIFACT SECURITY
   # SCA (Software Composition Analysis) starts here: inspect third-party packages, base components, licenses, and known CVEs.
   # Pipeline SCA tools: Trivy, Grype, Snyk, CycloneDX SBOM, Cosign signing, Dependency-Track ingestion.
   # =============================================================================
   dotnet-app-sca-security:
-    name: dotnet-app-sca-security
+    name: "Stage 4: App SCA & SBOM Security"
     runs-on: ubuntu-latest
     needs:
       - dotnet-build-test
@@ -516,18 +447,18 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
+        uses: ./.github/actions/checkout-code
+
+      - name: Resolve build version metadata
+        id: version_meta
+        uses: ./.github/actions/resolve-version-metadata
 
       - name: Setup .NET and restore
         uses: ./.github/actions/setup
 
       - name: Install Cosign
         if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.0.6
+        uses: ./.github/actions/setup-cosign
 
       - name: Prepare app security directories
         uses: ./.github/actions/prepare-directories
@@ -545,39 +476,19 @@ jobs:
           -o artifacts/publish
           --no-restore
 
-      - name: Generate app SBOM
-        shell: bash
-        run: >-
-          dotnet tool run dotnet-CycloneDX DevSecOpsPipelineSample.slnx
-          -o artifacts/sbom/app
-          -j
-
       - name: Sign app SBOM
         if: github.event_name != 'pull_request'
-        shell: bash
-        run: >-
-          cosign sign-blob --yes
-          --bundle artifacts/sbom/app/bom.sigstore.json
-          artifacts/sbom/app/bom.json
+        uses: ./.github/actions/sign-keyless-blob
+        with:
+          blob-path: artifacts/sbom/app/bom.json
+          bundle-path: artifacts/sbom/app/bom.sigstore.json
 
       - name: Verify app SBOM signature
         if: github.event_name != 'pull_request'
-        shell: bash
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-        run: >-
-          cosign verify-blob
-          --bundle artifacts/sbom/app/bom.sigstore.json
-          --certificate-identity-regexp '^https://github.com/.+$'
-          --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          --certificate-github-workflow-repository "$GITHUB_REPOSITORY"
-          --certificate-github-workflow-ref "$GITHUB_REF"
-          --certificate-github-workflow-sha "$GITHUB_SHA"
-          --certificate-github-workflow-trigger "$GITHUB_EVENT_NAME"
-          artifacts/sbom/app/bom.json
+        uses: ./.github/actions/verify-keyless-blob-signature
+        with:
+          blob-path: artifacts/sbom/app/bom.json
+          bundle-path: artifacts/sbom/app/bom.sigstore.json
 
       - name: Run Trivy app scan SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -605,9 +516,9 @@ jobs:
 
       - name: Upload Trivy app SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/trivy-app.sarif
+          sarif-file: artifacts/security/trivy-app.sarif
           category: trivy-app
 
       - name: Run Grype app scan SARIF
@@ -632,24 +543,18 @@ jobs:
 
       - name: Upload Grype app SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/grype-app.sarif
+          sarif-file: artifacts/security/grype-app.sarif
           category: grype-app
 
       - name: Resolve Snyk app configuration
         id: snyk_app_config
-        shell: bash
+        uses: ./.github/actions/resolve-snyk-config
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          if [[ -z "${SNYK_TOKEN}" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "SNYK_TOKEN not configured. Skip Snyk app scan."
-            exit 0
-          fi
-
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        with:
+          scan-name: app
 
       # Snyk GitHub Actions docs:
       # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
@@ -675,36 +580,17 @@ jobs:
 
       - name: Upload Snyk app SARIF
         if: always() && steps.snyk_app_config.outputs.enabled == 'true' && hashFiles('artifacts/security/snyk-app.sarif') != ''
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/snyk-app.sarif
+          sarif-file: artifacts/security/snyk-app.sarif
           category: snyk-app
 
       - name: Resolve Snyk app monitor metadata
         if: steps.snyk_app_config.outputs.enabled == 'true'
         id: snyk_app_meta
-        shell: bash
-        env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_REF_TYPE: ${{ github.ref_type }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          short_sha="${GITHUB_SHA::7}"
-          ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
-
-          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
-            target_reference="$ref_slug"
-          else
-            target_reference="$short_sha"
-          fi
-
-          project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},kind=app"
-
-          echo "target_reference=$target_reference" >> "$GITHUB_OUTPUT"
-          echo "project_tags=$project_tags" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/resolve-snyk-monitor-metadata
+        with:
+          kind: app
 
       - name: Monitor app in Snyk
         if: always() && steps.snyk_app_config.outputs.enabled == 'true'
@@ -735,11 +621,11 @@ jobs:
           dependency-track-api-key: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
           bom-file: artifacts/sbom/app/bom.json
           project-name: ${{ env.APP_SBOM_PROJECT_NAME }}
-          project-version: ${{ github.sha }}
+          project-version: ${{ steps.version_meta.outputs.build_version }}
 
       - name: Upload app security artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/upload-workflow-artifact
         with:
           name: app-security-artifacts
           path: |
@@ -754,7 +640,7 @@ jobs:
   # Local tools: docker build, docker save, docker load.
   # =============================================================================
   image-build:
-    name: image-build
+    name: "Stage 5: Build Image Artifact"
     runs-on: ubuntu-latest
     needs:
       - dotnet-app-sca-security
@@ -762,35 +648,16 @@ jobs:
       image-name: ${{ steps.meta.outputs.image_name }}
       image-ref: ${{ steps.meta.outputs.image_ref }}
       image-tag: ${{ steps.meta.outputs.image_tag }}
+      build-version: ${{ steps.meta.outputs.build_version }}
     permissions:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
+        uses: ./.github/actions/checkout-code
 
-      - name: Normalize repository name
+      - name: Resolve image and version metadata
         id: meta
-        shell: bash
-        env:
-          REPOSITORY_NAME: ${{ github.repository }}
-          GITHUB_REF_TYPE: ${{ github.ref_type }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          IMAGE_NAME="$(echo "$REPOSITORY_NAME" | tr '[:upper:]' '[:lower:]')"
-          SHORT_SHA="${GITHUB_SHA::7}"
-
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            IMAGE_TAG="$GITHUB_REF_NAME"
-          else
-            IMAGE_TAG="$SHORT_SHA"
-          fi
-
-          echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "image_ref=ghcr.io/${IMAGE_NAME}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/resolve-version-metadata
 
       - name: Build container image
         shell: bash
@@ -805,7 +672,7 @@ jobs:
         run: docker save "$IMAGE_REF" | gzip > "$IMAGE_TAR_PATH"
 
       - name: Upload container image artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/upload-workflow-artifact
         with:
           name: container-image
           path: ${{ env.IMAGE_TAR_PATH }}
@@ -817,7 +684,7 @@ jobs:
   # Local image security tools: trivy image, grype, snyk container test, docker scout or equivalent, cosign verify.
   # =============================================================================
   image-sca-security:
-    name: image-sca-security
+    name: "Stage 6: Image SCA & SBOM Security"
     runs-on: ubuntu-latest
     needs:
       - image-build
@@ -831,14 +698,13 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
+        uses: ./.github/actions/checkout-code
 
       - name: Download container image artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: ./.github/actions/download-workflow-artifact
         with:
           name: container-image
+          path: .
 
       - name: Load container image
         shell: bash
@@ -858,9 +724,7 @@ jobs:
 
       - name: Install Cosign
         if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.0.6
+        uses: ./.github/actions/setup-cosign
 
       - name: Prepare image security directories
         uses: ./.github/actions/prepare-directories
@@ -880,30 +744,17 @@ jobs:
 
       - name: Sign image SBOM
         if: github.event_name != 'pull_request'
-        shell: bash
-        run: >-
-          cosign sign-blob --yes
-          --bundle artifacts/sbom/image/image-sbom.sigstore.json
-          artifacts/sbom/image/image.cdx.json
+        uses: ./.github/actions/sign-keyless-blob
+        with:
+          blob-path: artifacts/sbom/image/image.cdx.json
+          bundle-path: artifacts/sbom/image/image-sbom.sigstore.json
 
       - name: Verify image SBOM signature
         if: github.event_name != 'pull_request'
-        shell: bash
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-        run: >-
-          cosign verify-blob
-          --bundle artifacts/sbom/image/image-sbom.sigstore.json
-          --certificate-identity-regexp '^https://github.com/.+$'
-          --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          --certificate-github-workflow-repository "$GITHUB_REPOSITORY"
-          --certificate-github-workflow-ref "$GITHUB_REF"
-          --certificate-github-workflow-sha "$GITHUB_SHA"
-          --certificate-github-workflow-trigger "$GITHUB_EVENT_NAME"
-          artifacts/sbom/image/image.cdx.json
+        uses: ./.github/actions/verify-keyless-blob-signature
+        with:
+          blob-path: artifacts/sbom/image/image.cdx.json
+          bundle-path: artifacts/sbom/image/image-sbom.sigstore.json
 
       - name: Run Trivy image scan SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -927,9 +778,9 @@ jobs:
 
       - name: Upload Trivy image SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/trivy-image.sarif
+          sarif-file: artifacts/security/trivy-image.sarif
           category: trivy-image
 
       - name: Run Grype image scan SARIF
@@ -954,24 +805,18 @@ jobs:
 
       - name: Upload Grype image SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/grype-image.sarif
+          sarif-file: artifacts/security/grype-image.sarif
           category: grype-image
 
       - name: Resolve Snyk image configuration
         id: snyk_image_config
-        shell: bash
+        uses: ./.github/actions/resolve-snyk-config
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: |
-          if [[ -z "${SNYK_TOKEN}" ]]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "SNYK_TOKEN not configured. Skip Snyk image scan."
-            exit 0
-          fi
-
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        with:
+          scan-name: image
 
       # Snyk GitHub Actions docs:
       # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
@@ -994,38 +839,19 @@ jobs:
 
       - name: Upload Snyk image SARIF
         if: always() && steps.snyk_image_config.outputs.enabled == 'true' && hashFiles('artifacts/security/snyk-image.sarif') != ''
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: ./.github/actions/upload-sarif
         with:
-          sarif_file: artifacts/security/snyk-image.sarif
+          sarif-file: artifacts/security/snyk-image.sarif
           category: snyk-image
 
       - name: Resolve Snyk image monitor metadata
         if: steps.snyk_image_config.outputs.enabled == 'true'
         id: snyk_image_meta
-        shell: bash
-        env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          GITHUB_REF_TYPE: ${{ github.ref_type }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          IMAGE_TAG: ${{ needs.image-build.outputs.image-tag }}
-        run: |
-          short_sha="${GITHUB_SHA::7}"
-          ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
-          image_tag_slug="$(printf '%s' "$IMAGE_TAG" | tr '/:@' '---')"
-
-          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
-            target_reference="$image_tag_slug"
-          else
-            target_reference="$short_sha"
-          fi
-
-          project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},image_tag=${image_tag_slug},kind=image"
-
-          echo "target_reference=$target_reference" >> "$GITHUB_OUTPUT"
-          echo "project_tags=$project_tags" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/resolve-snyk-monitor-metadata
+        with:
+          kind: image
+          image-tag: ${{ needs.image-build.outputs.image-tag }}
+          use-image-tag-for-tag-ref: "true"
 
       - name: Monitor image in Snyk
         if: always() && steps.snyk_image_config.outputs.enabled == 'true'
@@ -1056,11 +882,11 @@ jobs:
           dependency-track-api-key: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
           bom-file: artifacts/sbom/image/image.cdx.json
           project-name: ${{ env.APP_SBOM_PROJECT_NAME }}-image
-          project-version: ${{ github.sha }}
+          project-version: ${{ needs.image-build.outputs.build-version }}
 
       - name: Upload image security artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/upload-workflow-artifact
         with:
           name: image-security-artifacts
           path: |
@@ -1075,7 +901,7 @@ jobs:
   # Sonar, app security, and image security all succeed.
   # =============================================================================
   security-gate:
-    name: security-gate
+    name: "Stage 7: Security Gate"
     if: always()
     runs-on: ubuntu-latest
     needs:
@@ -1136,7 +962,7 @@ jobs:
 
       - name: Upload security gate report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/upload-workflow-artifact
         with:
           name: security-gate-report
           path: reports/security-gate-report.md
@@ -1148,7 +974,7 @@ jobs:
   # Local tools: docker buildx, cosign sign/verify, gh attestation verify when validating release outputs.
   # =============================================================================
   image-publish:
-    name: image-publish
+    name: "Stage 8: Publish Image"
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - security-gate
@@ -1162,15 +988,13 @@ jobs:
       packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 1
+        uses: ./.github/actions/checkout-code
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: ./.github/actions/login-ghcr
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -1200,22 +1024,13 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
 
       - name: Summarize published image
-        shell: bash
-        env:
-          IMAGE_REF: ${{ needs.image-sca-security.outputs.image-ref }}
-          IMAGE_DIGEST: ${{ steps.build_and_push.outputs.digest }}
-        run: |
-          echo "Published ${IMAGE_REF}"
-          echo "Digest ${IMAGE_DIGEST}"
-          {
-            echo "## Published Image"
-            echo ""
-            echo "- Reference: ${IMAGE_REF}"
-            echo "- Digest: ${IMAGE_DIGEST}"
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: ./.github/actions/summarize-published-image
+        with:
+          image-ref: ${{ needs.image-sca-security.outputs.image-ref }}
+          image-digest: ${{ steps.build_and_push.outputs.digest }}
 
   image-sign:
-    name: image-sign
+    name: "Stage 8: Sign Image"
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-publish
@@ -1230,60 +1045,30 @@ jobs:
       id-token: write
     steps:
       - name: Download image security artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: ./.github/actions/download-workflow-artifact
         with:
           name: image-security-artifacts
           path: ghcr-evidence/image-security
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: ./.github/actions/login-ghcr
         with:
-          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.0.6
-
-      - name: Attach image SBOM to published image
-        shell: bash
-        env:
-          IMAGE_PUBLISH_REF: ${{ needs.image-publish.outputs.image-ref }}
-          IMAGE_PUBLISH_DIGEST: ${{ needs.image-publish.outputs.image-digest }}
-        run: |
-          IMAGE_REPOSITORY="$IMAGE_PUBLISH_REF"
-          IMAGE_REPOSITORY="${IMAGE_REPOSITORY%:*}"
-          IMAGE_DIGEST="$IMAGE_PUBLISH_DIGEST"
-          IMAGE_WITH_DIGEST="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
-          IMAGE_SBOM_FILE="$(find ghcr-evidence/image-security -type f \( -name 'image.cdx.json' -o -name '*.cdx.json' \) | head -n 1)"
-
-          if [[ -z "${IMAGE_SBOM_FILE}" ]]; then
-            echo "::error::Image SBOM file not found for GHCR attachment."
-            exit 1
-          fi
-
-          cosign attach sbom --sbom "${IMAGE_SBOM_FILE}" "${IMAGE_WITH_DIGEST}"
+        uses: ./.github/actions/setup-cosign
 
       - name: Sign published image with GitHub OIDC
         id: sign
-        shell: bash
-        env:
-          IMAGE_PUBLISH_REF: ${{ needs.image-publish.outputs.image-ref }}
-          IMAGE_PUBLISH_DIGEST: ${{ needs.image-publish.outputs.image-digest }}
-        run: |
-          IMAGE_REPOSITORY="$IMAGE_PUBLISH_REF"
-          IMAGE_REPOSITORY="${IMAGE_REPOSITORY%:*}"
-          IMAGE_DIGEST="$IMAGE_PUBLISH_DIGEST"
-          IMAGE_WITH_DIGEST="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
-          cosign sign --yes "${IMAGE_WITH_DIGEST}"
-          echo "image_repository=${IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
-          echo "image_digest=${IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "image_with_digest=${IMAGE_WITH_DIGEST}" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/sign-published-image
+        with:
+          image-publish-ref: ${{ needs.image-publish.outputs.image-ref }}
+          image-publish-digest: ${{ needs.image-publish.outputs.image-digest }}
+          image-security-artifacts-path: ghcr-evidence/image-security
 
   verify-image-signature:
-    name: verify-image-signature
+    name: "Stage 8: Verify Image Signature"
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-sign
@@ -1295,32 +1080,23 @@ jobs:
       packages: read
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: ./.github/actions/login-ghcr
         with:
-          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.0.6
+        uses: ./.github/actions/setup-cosign
 
       - name: Verify keyless image signature
         id: verified_image
-        shell: bash
-        env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-          IMAGE_WITH_DIGEST: ${{ needs.image-sign.outputs.image-with-digest }}
-        run: |
-          cosign verify \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            --certificate-identity "https://github.com/$WORKFLOW_REF" \
-            "$IMAGE_WITH_DIGEST"
-          echo "image_with_digest=$IMAGE_WITH_DIGEST" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/verify-keyless-image-signature
+        with:
+          workflow-ref: ${{ github.workflow_ref }}
+          image-with-digest: ${{ needs.image-sign.outputs.image-with-digest }}
 
   attest:
-    name: attest
+    name: "Stage 8: Attest Image"
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-sign
@@ -1341,7 +1117,7 @@ jobs:
   # Persist artifacts needed for audit, incident response, and deployment handoff.
   # =============================================================================
   record-and-notify:
-    name: record-and-notify
+    name: "Stage 9: Record & Notify"
     if: always()
     runs-on: ubuntu-latest
     needs:
@@ -1358,172 +1134,40 @@ jobs:
       contents: read
       issues: write
     steps:
-      - name: Download test results
-        if: always() && needs.dotnet-build-test.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Download CI evidence artifacts
+        if: always()
+        uses: ./.github/actions/download-ci-evidence-artifacts
         with:
-          name: test-results
-          path: ci-evidence/test-results
+          test-results-result: ${{ needs.dotnet-build-test.result }}
+          app-security-result: ${{ needs.dotnet-app-sca-security.result }}
+          image-security-result: ${{ needs.image-sca-security.result }}
+          security-gate-result: ${{ needs.security-gate.result }}
 
-      - name: Download coverage report artifact
-        if: always() && needs.dotnet-build-test.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: coverage-report
-          path: ci-evidence/coverage-report
-
-      - name: Download app security artifacts
-        if: always() && needs.dotnet-app-sca-security.result != 'skipped'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: app-security-artifacts
-          path: ci-evidence/app-security
-
-      - name: Download image security artifacts
-        if: always() && needs.image-sca-security.result != 'skipped'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: image-security-artifacts
-          path: ci-evidence/image-security
-
-      - name: Download security gate report
-        if: always() && needs.security-gate.result != 'skipped'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: security-gate-report
-          path: ci-evidence/security-gate
+      - name: Resolve shared version metadata
+        id: version_meta
+        uses: ./.github/actions/resolve-version-metadata
 
       - name: Create CI evidence summary
-        shell: bash
-        env:
-          SECURITY_GATE_STATUS: ${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}
-          SONAR_RESULT: ${{ needs.sast-sonar.result }}
-          BUILD_AND_TEST_RESULT: ${{ needs.dotnet-build-test.result }}
-          APP_SECURITY_RESULT: ${{ needs.dotnet-app-sca-security.result }}
-          IMAGE_SECURITY_RESULT: ${{ needs.image-sca-security.result }}
-          IMAGE_PUBLISH_RESULT: ${{ needs.image-publish.result }}
-          IMAGE_SIGN_RESULT: ${{ needs.image-sign.result }}
-          VERIFY_IMAGE_SIGNATURE_RESULT: ${{ needs.verify-image-signature.result }}
-          ATTEST_RESULT: ${{ needs.attest.result }}
-          PUBLISHED_IMAGE_REF: ${{ needs.image-publish.outputs.image-ref }}
-          PUBLISHED_IMAGE_DIGEST: ${{ needs.image-publish.outputs.image-digest }}
-          SIGNED_IMAGE_WITH_DIGEST: ${{ needs.image-sign.outputs.image-with-digest }}
-          VERIFIED_IMAGE_WITH_DIGEST: ${{ needs.verify-image-signature.outputs.image-with-digest }}
-        run: |
-          mkdir -p ci-evidence
-
-          AUTO_DEPLOY="false"
-          TARGET_ENVIRONMENT=""
-          DEPLOY_SOURCE="none"
-
-          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            AUTO_DEPLOY="true"
-            TARGET_ENVIRONMENT="dev"
-            DEPLOY_SOURCE="main"
-          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            AUTO_DEPLOY="true"
-            TARGET_ENVIRONMENT="prod"
-            DEPLOY_SOURCE="tag"
-          fi
-
-          IMAGE_VERSION="${PUBLISHED_IMAGE_REF##*:}"
-          if [[ -z "${PUBLISHED_IMAGE_REF}" || "${IMAGE_VERSION}" == "${PUBLISHED_IMAGE_REF}" ]]; then
-            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-              IMAGE_VERSION="${GITHUB_REF_NAME}"
-            else
-              IMAGE_VERSION="${GITHUB_SHA::7}"
-            fi
-          fi
-
-          cat > ci-evidence/build-metadata.json <<EOF
-          {
-            "build": {
-              "name": "DevSecOpsPipelineSample",
-              "number": "${GITHUB_RUN_NUMBER}",
-              "version": "${IMAGE_VERSION}",
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-              "vcs": {
-                "revision": "${GITHUB_SHA}",
-                "branch": "${GITHUB_REF_NAME}",
-                "url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-              }
-            },
-            "security": {
-              "gate": {
-                "status": "${SECURITY_GATE_STATUS}"
-              },
-              "stages": {
-                "sonar": "${SONAR_RESULT}",
-                "appSecurity": "${APP_SECURITY_RESULT}",
-                "imageSecurity": "${IMAGE_SECURITY_RESULT}",
-                "signatureVerification": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
-                "attestation": "${ATTEST_RESULT}"
-              }
-            },
-            "artifacts": {
-              "publishedImageRef": "${PUBLISHED_IMAGE_REF}",
-              "publishedImageDigest": "${PUBLISHED_IMAGE_DIGEST}",
-              "signedImageWithDigest": "${SIGNED_IMAGE_WITH_DIGEST}",
-              "verifiedImageWithDigest": "${VERIFIED_IMAGE_WITH_DIGEST}",
-              "ciEvidenceArtifact": "ci-evidence"
-            },
-            "deployment": {
-              "autoDeploy": ${AUTO_DEPLOY},
-              "targetEnvironment": "${TARGET_ENVIRONMENT}",
-              "source": "${DEPLOY_SOURCE}"
-            }
-          }
-          EOF
-
-          cat > ci-evidence/pipeline-summary.md <<EOF
-          # CI Pipeline Summary
-
-          - Security gate: ${SECURITY_GATE_STATUS}
-          - Sonar: ${SONAR_RESULT}
-          - Build and test: ${BUILD_AND_TEST_RESULT}
-          - App security: ${APP_SECURITY_RESULT}
-          - Image security: ${IMAGE_SECURITY_RESULT}
-          - Image publish: ${IMAGE_PUBLISH_RESULT}
-          - Image sign: ${IMAGE_SIGN_RESULT}
-          - Signature verify: ${VERIFY_IMAGE_SIGNATURE_RESULT}
-          - Attest: ${ATTEST_RESULT}
-          - Published image ref: ${PUBLISHED_IMAGE_REF}
-          - Published image digest: ${PUBLISHED_IMAGE_DIGEST}
-          - Signed image digest ref: ${SIGNED_IMAGE_WITH_DIGEST}
-          - Verified image digest ref: ${VERIFIED_IMAGE_WITH_DIGEST}
-          - Auto deploy: ${AUTO_DEPLOY}
-          - Target environment: ${TARGET_ENVIRONMENT}
-          - Commit: ${GITHUB_SHA}
-          - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          EOF
-
-          cat > ci-evidence/pipeline-summary.json <<EOF
-          {
-            "securityGate": "${SECURITY_GATE_STATUS}",
-            "sonar": "${SONAR_RESULT}",
-            "buildAndTest": "${BUILD_AND_TEST_RESULT}",
-            "appSecurity": "${APP_SECURITY_RESULT}",
-            "imageSecurity": "${IMAGE_SECURITY_RESULT}",
-            "imagePublish": "${IMAGE_PUBLISH_RESULT}",
-            "imageSign": "${IMAGE_SIGN_RESULT}",
-            "verifyImageSignature": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
-            "attest": "${ATTEST_RESULT}",
-            "publishedImageRef": "${PUBLISHED_IMAGE_REF}",
-            "publishedImageDigest": "${PUBLISHED_IMAGE_DIGEST}",
-            "signedImageWithDigest": "${SIGNED_IMAGE_WITH_DIGEST}",
-            "verifiedImageWithDigest": "${VERIFIED_IMAGE_WITH_DIGEST}",
-            "autoDeploy": ${AUTO_DEPLOY},
-            "targetEnvironment": "${TARGET_ENVIRONMENT}",
-            "commit": "${GITHUB_SHA}",
-            "runUrl": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          }
-          EOF
-
-          cat ci-evidence/pipeline-summary.md >> "$GITHUB_STEP_SUMMARY"
+        uses: ./.github/actions/create-ci-evidence
+        with:
+          build-version: ${{ needs.image-sca-security.outputs.image-tag || steps.version_meta.outputs.build_version }}
+          security-gate-status: ${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}
+          sonar-result: ${{ needs.sast-sonar.result }}
+          build-and-test-result: ${{ needs.dotnet-build-test.result }}
+          app-security-result: ${{ needs.dotnet-app-sca-security.result }}
+          image-security-result: ${{ needs.image-sca-security.result }}
+          image-publish-result: ${{ needs.image-publish.result }}
+          image-sign-result: ${{ needs.image-sign.result }}
+          verify-image-signature-result: ${{ needs.verify-image-signature.result }}
+          attest-result: ${{ needs.attest.result }}
+          published-image-ref: ${{ needs.image-publish.outputs.image-ref }}
+          published-image-digest: ${{ needs.image-publish.outputs.image-digest }}
+          signed-image-with-digest: ${{ needs.image-sign.outputs.image-with-digest }}
+          verified-image-with-digest: ${{ needs.verify-image-signature.outputs.image-with-digest }}
 
       - name: Upload CI evidence bundle
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/upload-workflow-artifact
         with:
           name: ci-evidence
           path: ci-evidence/**

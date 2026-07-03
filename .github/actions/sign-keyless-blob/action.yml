@@ -1,0 +1,23 @@
+name: Sign keyless blob
+description: Sign a blob with Cosign and store the Sigstore bundle.
+
+inputs:
+  blob-path:
+    description: File path of the blob to sign.
+    required: true
+  bundle-path:
+    description: Output path for the Sigstore bundle JSON.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Sign blob
+    shell: bash
+    env:
+      BLOB_PATH: ${{ inputs.blob-path }}
+      BUNDLE_PATH: ${{ inputs.bundle-path }}
+    run: |
+      cosign sign-blob --yes \
+        --bundle "$BUNDLE_PATH" \
+        "$BLOB_PATH"

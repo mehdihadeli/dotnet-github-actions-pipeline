@@ -1,0 +1,30 @@
+name: Resolve Snyk config
+description: Decide whether a Snyk scan should run based on token availability.
+
+inputs:
+  scan-name:
+    description: Human-readable scan name used in skip messages.
+    required: true
+
+outputs:
+  enabled:
+    description: Whether the Snyk scan should run.
+    value: ${{ steps.resolve.outputs.enabled }}
+
+runs:
+  using: composite
+  steps:
+  - name: Resolve Snyk enablement
+    id: resolve
+    shell: bash
+    env:
+      SCAN_NAME: ${{ inputs.scan-name }}
+      SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
+    run: |
+      if [[ -z "${SNYK_TOKEN}" ]]; then
+        echo "enabled=false" >> "$GITHUB_OUTPUT"
+        echo "SNYK_TOKEN not configured. Skip Snyk ${SCAN_NAME} scan."
+        exit 0
+      fi
+
+      echo "enabled=true" >> "$GITHUB_OUTPUT"

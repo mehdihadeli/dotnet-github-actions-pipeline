@@ -1,0 +1,63 @@
+name: Sign published image
+description: Attach the image SBOM to a published image and sign it with Cosign.
+
+inputs:
+  image-publish-ref:
+    description: Published image reference with tag.
+    required: true
+  image-publish-digest:
+    description: Published image digest.
+    required: true
+  image-security-artifacts-path:
+    description: Directory containing image security artifacts including the SBOM.
+    required: true
+
+outputs:
+  image_repository:
+    description: Published image repository without tag.
+    value: ${{ steps.sign.outputs.image_repository }}
+  image_digest:
+    description: Published image digest.
+    value: ${{ steps.sign.outputs.image_digest }}
+  image_with_digest:
+    description: Published image reference using digest notation.
+    value: ${{ steps.sign.outputs.image_with_digest }}
+
+runs:
+  using: composite
+  steps:
+  - name: Attach image SBOM
+    shell: bash
+    env:
+      IMAGE_PUBLISH_REF: ${{ inputs.image-publish-ref }}
+      IMAGE_PUBLISH_DIGEST: ${{ inputs.image-publish-digest }}
+      IMAGE_SECURITY_ARTIFACTS_PATH: ${{ inputs.image-security-artifacts-path }}
+    run: |
+      IMAGE_REPOSITORY="$IMAGE_PUBLISH_REF"
+      IMAGE_REPOSITORY="${IMAGE_REPOSITORY%:*}"
+      IMAGE_DIGEST="$IMAGE_PUBLISH_DIGEST"
+      IMAGE_WITH_DIGEST="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+      IMAGE_SBOM_FILE="$(find "$IMAGE_SECURITY_ARTIFACTS_PATH" -type f \( -name 'image.cdx.json' -o -name '*.cdx.json' \) | head -n 1)"
+
+      if [[ -z "${IMAGE_SBOM_FILE}" ]]; then
+        echo "::error::Image SBOM file not found for GHCR attachment."
+        exit 1
+      fi
+
+      cosign attach sbom --sbom "${IMAGE_SBOM_FILE}" "${IMAGE_WITH_DIGEST}"
+
+  - name: Sign image
+    id: sign
+    shell: bash
+    env:
+      IMAGE_PUBLISH_REF: ${{ inputs.image-publish-ref }}
+      IMAGE_PUBLISH_DIGEST: ${{ inputs.image-publish-digest }}
+    run: |
+      IMAGE_REPOSITORY="$IMAGE_PUBLISH_REF"
+      IMAGE_REPOSITORY="${IMAGE_REPOSITORY%:*}"
+      IMAGE_DIGEST="$IMAGE_PUBLISH_DIGEST"
+      IMAGE_WITH_DIGEST="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+      cosign sign --yes "${IMAGE_WITH_DIGEST}"
+      echo "image_repository=${IMAGE_REPOSITORY}" >> "$GITHUB_OUTPUT"
+      echo "image_digest=${IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
+      echo "image_with_digest=${IMAGE_WITH_DIGEST}" >> "$GITHUB_OUTPUT"

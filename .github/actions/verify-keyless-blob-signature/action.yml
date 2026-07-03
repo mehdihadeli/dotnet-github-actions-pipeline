@@ -1,0 +1,33 @@
+name: Verify keyless blob signature
+description: Verify a Cosign keyless blob signature bundle issued by a GitHub Actions workflow.
+
+inputs:
+  blob-path:
+    description: File path of the signed blob.
+    required: true
+  bundle-path:
+    description: Sigstore bundle JSON path.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Verify blob signature
+    shell: bash
+    env:
+      BLOB_PATH: ${{ inputs.blob-path }}
+      BUNDLE_PATH: ${{ inputs.bundle-path }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_REF: ${{ github.ref }}
+      GITHUB_SHA: ${{ github.sha }}
+      GITHUB_EVENT_NAME: ${{ github.event_name }}
+    run: |
+      cosign verify-blob \
+        --bundle "$BUNDLE_PATH" \
+        --certificate-identity-regexp '^https://github.com/.+$' \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+        --certificate-github-workflow-ref "$GITHUB_REF" \
+        --certificate-github-workflow-sha "$GITHUB_SHA" \
+        --certificate-github-workflow-trigger "$GITHUB_EVENT_NAME" \
+        "$BLOB_PATH"

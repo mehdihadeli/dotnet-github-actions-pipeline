@@ -1,0 +1,31 @@
+name: Verify keyless image signature
+description: Verify a Cosign keyless signature for a published image.
+
+inputs:
+  workflow-ref:
+    description: GitHub workflow ref used for certificate identity.
+    required: true
+  image-with-digest:
+    description: Image reference using digest notation.
+    required: true
+
+outputs:
+  image_with_digest:
+    description: Verified image reference using digest notation.
+    value: ${{ steps.verify.outputs.image_with_digest }}
+
+runs:
+  using: composite
+  steps:
+  - name: Verify signature
+    id: verify
+    shell: bash
+    env:
+      WORKFLOW_REF: ${{ inputs.workflow-ref }}
+      IMAGE_WITH_DIGEST: ${{ inputs.image-with-digest }}
+    run: |
+      cosign verify \
+        --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+        --certificate-identity "https://github.com/$WORKFLOW_REF" \
+        "$IMAGE_WITH_DIGEST"
+      echo "image_with_digest=$IMAGE_WITH_DIGEST" >> "$GITHUB_OUTPUT"

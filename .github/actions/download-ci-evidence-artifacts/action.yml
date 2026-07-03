@@ -1,0 +1,58 @@
+name: Download CI evidence artifacts
+description: Download the standard CI evidence artifact set into the expected workspace folders.
+
+inputs:
+  test-results-result:
+    description: Result of the build/test job used to decide whether test artifacts exist.
+    required: true
+  app-security-result:
+    description: Result of the app security job.
+    required: true
+  image-security-result:
+    description: Result of the image security job.
+    required: true
+  security-gate-result:
+    description: Result of the security gate job.
+    required: true
+  base-path:
+    description: Base directory for downloaded evidence.
+    required: false
+    default: ci-evidence
+
+runs:
+  using: composite
+  steps:
+  - name: Download test results
+    if: inputs.test-results-result == 'success'
+    uses: ./.github/actions/download-workflow-artifact
+    with:
+      name: test-results
+      path: ${{ inputs.base-path }}/test-results
+
+  - name: Download coverage report
+    if: inputs.test-results-result == 'success'
+    uses: ./.github/actions/download-workflow-artifact
+    with:
+      name: coverage-report
+      path: ${{ inputs.base-path }}/coverage-report
+
+  - name: Download app security artifacts
+    if: inputs.app-security-result != 'skipped'
+    uses: ./.github/actions/download-workflow-artifact
+    with:
+      name: app-security-artifacts
+      path: ${{ inputs.base-path }}/app-security
+
+  - name: Download image security artifacts
+    if: inputs.image-security-result != 'skipped'
+    uses: ./.github/actions/download-workflow-artifact
+    with:
+      name: image-security-artifacts
+      path: ${{ inputs.base-path }}/image-security
+
+  - name: Download security gate report
+    if: inputs.security-gate-result != 'skipped'
+    uses: ./.github/actions/download-workflow-artifact
+    with:
+      name: security-gate-report
+      path: ${{ inputs.base-path }}/security-gate

@@ -1,0 +1,28 @@
+name: Summarize published image
+description: Write published image reference and digest to the workflow summary.
+
+inputs:
+  image-ref:
+    description: Published image reference.
+    required: true
+  image-digest:
+    description: Published image digest.
+    required: true
+
+runs:
+  using: composite
+  steps:
+  - name: Write image summary
+    shell: bash
+    env:
+      IMAGE_REF: ${{ inputs.image-ref }}
+      IMAGE_DIGEST: ${{ inputs.image-digest }}
+    run: |
+      echo "Published ${IMAGE_REF}"
+      echo "Digest ${IMAGE_DIGEST}"
+      {
+        echo "## Published Image"
+        echo ""
+        echo "- Reference: ${IMAGE_REF}"
+        echo "- Digest: ${IMAGE_DIGEST}"
+      } >> "$GITHUB_STEP_SUMMARY"
