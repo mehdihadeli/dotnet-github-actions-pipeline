@@ -255,12 +255,10 @@ jobs:
           short_sha="${GITHUB_SHA::7}"
           ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
 
-          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && -n "${PR_NUMBER:-}" ]]; then
-            target_reference="pr-${PR_NUMBER}"
-          elif [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
             target_reference="$ref_slug"
           else
-            target_reference="$ref_slug"
+            target_reference="$short_sha"
           fi
 
           project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},kind=iac"
@@ -697,12 +695,10 @@ jobs:
           short_sha="${GITHUB_SHA::7}"
           ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
 
-          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && -n "${PR_NUMBER:-}" ]]; then
-            target_reference="pr-${PR_NUMBER}"
-          elif [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
             target_reference="$ref_slug"
           else
-            target_reference="$ref_slug"
+            target_reference="$short_sha"
           fi
 
           project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},kind=app"
@@ -1020,12 +1016,10 @@ jobs:
           ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
           image_tag_slug="$(printf '%s' "$IMAGE_TAG" | tr '/:@' '---')"
 
-          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && -n "${PR_NUMBER:-}" ]]; then
-            target_reference="pr-${PR_NUMBER}"
-          elif [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
             target_reference="$image_tag_slug"
           else
-            target_reference="$ref_slug"
+            target_reference="$short_sha"
           fi
 
           project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},image_tag=${image_tag_slug},kind=image"
