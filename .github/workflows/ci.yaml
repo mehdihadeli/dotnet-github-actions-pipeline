@@ -626,22 +626,25 @@ jobs:
 
       # Snyk GitHub Actions docs:
       # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
-      # - .NET action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-dotnet-action
       # - Setup action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-setup-action
+
+      - name: Setup Snyk CLI
+        if: steps.snyk_app_config.outputs.enabled == 'true'
+        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
       - name: Run Snyk app scan
         if: steps.snyk_app_config.outputs.enabled == 'true'
         id: snyk_app_scan
         continue-on-error: true
-        uses: snyk/actions/dotnet@master
+        shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: >-
-            --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
-            --package-manager=nuget
-            --severity-threshold=high
-            --sarif-file-output=artifacts/security/snyk-app.sarif
+        run: >-
+          snyk test
+          --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+          --package-manager=nuget
+          --severity-threshold=high
+          --sarif-file-output=artifacts/security/snyk-app.sarif
 
       - name: Upload Snyk app SARIF
         if: always() && steps.snyk_app_config.outputs.enabled == 'true' && hashFiles('artifacts/security/snyk-app.sarif') != ''
@@ -652,17 +655,16 @@ jobs:
 
       - name: Monitor app in Snyk
         if: always() && steps.snyk_app_config.outputs.enabled == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: snyk/actions/dotnet@master
+        shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
-          args: >-
-            --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
-            --package-manager=nuget
-            --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
-            --target-reference=${{ github.ref_name }}
-            --remote-repo-url=https://github.com/${{ github.repository }}
+        run: >-
+          snyk monitor
+          --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+          --package-manager=nuget
+          --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
+          --target-reference=${{ github.ref_name }}
+          --remote-repo-url=https://github.com/${{ github.repository }}
 
       - name: Fail on Snyk app findings
         if: always() && steps.snyk_app_config.outputs.enabled == 'true' && steps.snyk_app_scan.outcome == 'failure'
