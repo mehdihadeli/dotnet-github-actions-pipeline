@@ -641,7 +641,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: >-
           snyk test
-          --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+          --file=src/DevSecOpsPipelineSample.Api/obj/project.assets.json
           --package-manager=nuget
           --severity-threshold=high
           --sarif-file-output=artifacts/security/snyk-app.sarif
@@ -660,7 +660,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: >-
           snyk monitor
-          --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+          --file=src/DevSecOpsPipelineSample.Api/obj/project.assets.json
           --package-manager=nuget
           --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
           --target-reference=${{ github.ref_name }}
