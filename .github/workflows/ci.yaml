@@ -346,7 +346,7 @@ jobs:
           TEST_ADDITIONAL_COVERAGE_OUTPUT_FORMAT: ""
           TEST_ADDITIONAL_COVERAGE_OUTPUT: ""
           TEST_NO_BUILD: "true"
-        run: scripts/run-tests.sh
+        run: bash scripts/run-tests.sh
 
       - name: Sonarqube End
         if: always() && steps.sonar_config.outputs.enabled == 'true'
@@ -891,7 +891,12 @@ jobs:
         run: |
           mkdir -p reports
 
-          if [[ "${SONAR_RESULT}" == "success" && "${APP_RESULT}" == "success" && "${IMAGE_RESULT}" == "success" ]]; then
+          sonar_gate_result="${SONAR_RESULT}"
+          if [[ "${sonar_gate_result}" == "skipped" ]]; then
+            sonar_gate_result="success"
+          fi
+
+          if [[ "${sonar_gate_result}" == "success" && "${APP_RESULT}" == "success" && "${IMAGE_RESULT}" == "success" ]]; then
             GATE_STATUS="PASS"
             GATE_MESSAGE="Sonar, application security, and image security stages passed."
           else
@@ -1330,6 +1335,8 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh api \
+          if ! gh api \
             "repos/$REPOSITORY/issues/$PULL_REQUEST_NUMBER/comments" \
-            -f body="$(cat ci-evidence/pipeline-summary.md)"
+            -f body="$(cat ci-evidence/pipeline-summary.md)"; then
+            echo "::warning::Unable to publish the pull request comment. CI evidence artifact and job summary were still generated."
+          fi

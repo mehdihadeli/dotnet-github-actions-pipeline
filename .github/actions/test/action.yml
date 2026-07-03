@@ -123,7 +123,7 @@ runs:
       TEST_ADDITIONAL_COVERAGE_OUTPUT: ${{ inputs.additional-coverage-output }}
       TEST_VERBOSITY: ${{ inputs.verbosity }}
       TEST_NO_BUILD: ${{ inputs.no-build }}
-    run: scripts/run-tests.sh
+    run: bash scripts/run-tests.sh
 
   # Transform Cobertura output into human-friendly HTML, lcov, and Markdown reports when requested.
   - name: Generate coverage reports
