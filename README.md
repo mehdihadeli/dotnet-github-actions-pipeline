@@ -145,7 +145,7 @@ This sample keeps deployment generic on purpose. It demonstrates reusable workfl
 - Sonar runs as optional parallel quality and security analysis for teams that already use SonarCloud or SonarQube gates
 - Trivy uses official `aquasecurity/trivy-action`
 - Grype uses official `anchore/scan-action`
-- Snyk uses official `snyk/actions/setup` with CLI-driven scans
+- Snyk uses official `snyk/actions/setup` with CLI-driven scans against the restored NuGet `obj/project.assets.json` manifest
 - Syft SBOM generation uses official `anchore/sbom-action`
 - ReportGenerator generates HTML, markdown, and lcov coverage reports from the Cobertura file emitted by the shared test action
 - Coveralls uploads the generated lcov coverage file for external coverage history and PR coverage feedback

@@ -179,6 +179,23 @@ jobs:
             exit 0
           fi
 
+          has_supported_snyk_iac_file=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              *.tf|*.tf.json|Chart.yaml|charts/*|helm/*|k8s/*|kubernetes/*|manifests/*)
+                has_supported_snyk_iac_file=true
+                break
+                ;;
+            esac
+          done < <(git ls-files)
+
+          if [[ "$has_supported_snyk_iac_file" != 'true' ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No Snyk-supported IaC files found in tracked repository contents. Skip Snyk IaC scan."
+            exit 0
+          fi
+
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       # Snyk GitHub Actions docs:
@@ -609,41 +626,45 @@ jobs:
 
       # Snyk GitHub Actions docs:
       # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
-      # - .NET action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-dotnet-action
       # - Setup action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-setup-action
+
+      - name: Setup Snyk CLI
+        if: steps.snyk_app_config.outputs.enabled == 'true'
+        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
 
       - name: Run Snyk app scan
         if: steps.snyk_app_config.outputs.enabled == 'true'
         id: snyk_app_scan
         continue-on-error: true
-        uses: snyk/actions/dotnet@master
+        shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: >-
-            --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
-            --severity-threshold=high
-            --sarif-file-output=artifacts/security/snyk-app.sarif
+        run: >-
+          snyk test
+          --file=src/DevSecOpsPipelineSample.Api/obj/project.assets.json
+          --package-manager=nuget
+          --severity-threshold=high
+          --sarif-file-output=artifacts/security/snyk-app.sarif
 
       - name: Upload Snyk app SARIF
-        if: always() && steps.snyk_app_config.outputs.enabled == 'true'
+        if: always() && steps.snyk_app_config.outputs.enabled == 'true' && hashFiles('artifacts/security/snyk-app.sarif') != ''
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-app.sarif
           category: snyk-app
 
       - name: Monitor app in Snyk
-        if: always() && steps.snyk_app_config.outputs.enabled == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: snyk/actions/dotnet@master
+        if: always() && steps.snyk_app_config.outputs.enabled == 'true' && github.ref == 'refs/heads/main'
+        shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
-          args: >-
-            --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
-            --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
-            --target-reference=${{ github.ref_name }}
-            --remote-repo-url=https://github.com/${{ github.repository }}
+        run: >-
+          snyk monitor
+          --file=src/DevSecOpsPipelineSample.Api/obj/project.assets.json
+          --package-manager=nuget
+          --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
+          --target-reference=${{ github.ref_name }}
+          --remote-repo-url=https://github.com/${{ github.repository }}
 
       - name: Fail on Snyk app findings
         if: always() && steps.snyk_app_config.outputs.enabled == 'true' && steps.snyk_app_scan.outcome == 'failure'
@@ -918,14 +939,14 @@ jobs:
             --sarif-file-output=artifacts/security/snyk-image.sarif
 
       - name: Upload Snyk image SARIF
-        if: always() && steps.snyk_image_config.outputs.enabled == 'true'
+        if: always() && steps.snyk_image_config.outputs.enabled == 'true' && hashFiles('artifacts/security/snyk-image.sarif') != ''
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-image.sarif
           category: snyk-image
 
       - name: Monitor image in Snyk
-        if: always() && steps.snyk_image_config.outputs.enabled == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: always() && steps.snyk_image_config.outputs.enabled == 'true' && github.ref == 'refs/heads/main'
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
