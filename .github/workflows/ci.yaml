@@ -639,11 +639,12 @@ jobs:
         with:
           args: >-
             --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+            --package-manager=nuget
             --severity-threshold=high
             --sarif-file-output=artifacts/security/snyk-app.sarif
 
       - name: Upload Snyk app SARIF
-        if: always() && steps.snyk_app_config.outputs.enabled == 'true'
+        if: always() && steps.snyk_app_config.outputs.enabled == 'true' && hashFiles('artifacts/security/snyk-app.sarif') != ''
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-app.sarif
@@ -658,6 +659,7 @@ jobs:
           command: monitor
           args: >-
             --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+            --package-manager=nuget
             --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
             --target-reference=${{ github.ref_name }}
             --remote-repo-url=https://github.com/${{ github.repository }}
