@@ -179,6 +179,23 @@ jobs:
             exit 0
           fi
 
+          has_supported_snyk_iac_file=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              *.tf|*.tf.json|Chart.yaml|charts/*|helm/*|k8s/*|kubernetes/*|manifests/*)
+                has_supported_snyk_iac_file=true
+                break
+                ;;
+            esac
+          done < <(git ls-files)
+
+          if [[ "$has_supported_snyk_iac_file" != 'true' ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No Snyk-supported IaC files found in tracked repository contents. Skip Snyk IaC scan."
+            exit 0
+          fi
+
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       # Snyk GitHub Actions docs:
