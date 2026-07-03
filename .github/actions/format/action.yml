@@ -1,5 +1,5 @@
 name: Validate formatting
-description: Run Husky-managed formatting checks.
+description: Run CI formatting checks.
 
 inputs:
   global-json-file:
@@ -21,6 +21,6 @@ runs:
       global-json-file: ${{ inputs.global-json-file }}
       solution-path: ${{ inputs.solution-path }}
 
-  - name: Verify formatting
+  - name: Apply repository formatting
     shell: bash
-    run: dotnet tool run husky -- run --name format
+    run: dotnet tool run csharpier format .

@@ -1,5 +1,5 @@
 name: Validate style
-description: Run Husky-managed style checks.
+description: Run CI style checks.
 
 inputs:
   global-json-file:
@@ -23,4 +23,4 @@ runs:
 
   - name: Validate style warnings
     shell: bash
-    run: dotnet tool run husky -- run --name style
+    run: dotnet tool run csharpier check .

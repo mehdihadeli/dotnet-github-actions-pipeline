@@ -89,7 +89,7 @@ SOLUTION_PATH=DevSecOpsPipelineSample.slnx dotnet tool run husky -- run --name s
 - if Docker is missing or the daemon is stopped, the pre-push hook fails with a targeted message before blocking the push
 - local Gitleaks runs on `pre-push` instead of `pre-commit` to keep commit latency low while still blocking secrets before they leave the workstation
 - Husky `build` is the local variant and allows restore; Husky `build-ci` is the CI-only variant and assumes setup already restored dependencies
-- CI keeps Gitleaks enforcement and disables Husky execution with `HUSKY=0`
+- CI keeps Gitleaks enforcement and bypasses Husky task execution because GitHub Actions runners only need the underlying dotnet commands
 - CI test stage also generates a downloadable HTML coverage report artifact and publishes a markdown coverage summary to the GitHub job summary
 
 ## GitHub secrets

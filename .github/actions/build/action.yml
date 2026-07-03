@@ -1,5 +1,5 @@
 name: Build solution
-description: Build solution using the Husky-managed build task.
+description: Build solution using the CI build command.
 
 inputs:
   global-json-file:
@@ -23,7 +23,4 @@ runs:
 
   - name: Build
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-      BUILD_CONFIGURATION: Release
-    run: dotnet tool run husky -- run --name build-ci
+    run: dotnet build "${{ inputs.solution-path }}" --no-restore --configuration Release -warnaserror

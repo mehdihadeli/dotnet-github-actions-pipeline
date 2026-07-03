@@ -1,5 +1,5 @@
 name: Setup .NET sample
-description: Setup SDK, restore local tools, and restore solution dependencies.
+description: Setup SDK, restore local tools, and restore solution dependencies for CI.
 
 inputs:
   global-json-file:
@@ -26,6 +26,4 @@ runs:
 
   - name: Restore solution
     shell: bash
-    env:
-      SOLUTION_PATH: ${{ inputs.solution-path }}
-    run: dotnet tool run husky -- run --name setup-solution-restore
+    run: dotnet restore "${{ inputs.solution-path }}"

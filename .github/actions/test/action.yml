@@ -1,5 +1,5 @@
 name: Test solution
-description: Run dotnet tests through the Husky test task with configurable Microsoft Testing Platform coverage, optional coverage reporting, and optional Coveralls upload.
+description: Run dotnet tests with configurable Microsoft Testing Platform coverage, optional coverage reporting, and optional Coveralls upload.
 
 inputs:
   global-json-file:
@@ -110,7 +110,7 @@ runs:
       global-json-file: ${{ inputs.global-json-file }}
       solution-path: ${{ inputs.solution-path }}
 
-  # Run the repo-standard Husky test task with caller-provided test and coverage settings.
+  # Run the repo-standard test script with caller-provided test and coverage settings.
   - name: Run tests
     shell: bash
     env:
@@ -123,7 +123,7 @@ runs:
       TEST_ADDITIONAL_COVERAGE_OUTPUT: ${{ inputs.additional-coverage-output }}
       TEST_VERBOSITY: ${{ inputs.verbosity }}
       TEST_NO_BUILD: ${{ inputs.no-build }}
-    run: dotnet tool run husky -- run --name test
+    run: scripts/run-tests.sh
 
   # Transform Cobertura output into human-friendly HTML, lcov, and Markdown reports when requested.
   - name: Generate coverage reports
