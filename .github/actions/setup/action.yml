@@ -26,7 +26,7 @@ runs:
 
   - name: Configure Husky
     shell: bash
-    run: dotnet tool run husky -- run --name setup-husky-install
+    run: dotnet husky install
 
   - name: Restore solution
     shell: bash

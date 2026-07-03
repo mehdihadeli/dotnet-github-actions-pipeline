@@ -51,16 +51,6 @@
       ]
     },
     {
-      "name": "setup-tools-restore",
-      "command": "dotnet",
-      "args": ["tool", "restore"]
-    },
-    {
-      "name": "setup-husky-install",
-      "command": "dotnet",
-      "args": ["tool", "run", "husky", "--", "install"]
-    },
-    {
       "name": "setup-solution-restore",
       "command": "bash",
       "args": [
