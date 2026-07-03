@@ -84,7 +84,7 @@
     {
       "name": "test",
       "group": "pre-push",
-      "command": "sh",
+      "command": "bash",
       "args": ["scripts/run-tests.sh"],
       "include": [
         "src/**/*",
