@@ -225,7 +225,7 @@ jobs:
         if: steps.snyk_iac_config.outputs.enabled == 'true'
         id: snyk_iac_scan
         continue-on-error: true
-        uses: snyk/actions/iac@master
+        uses: snyk/actions/iac@8e119fbb6c251787721d34ba683ed48eba792766
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -240,9 +240,37 @@ jobs:
           sarif_file: snyk.sarif
           category: snyk-iac
 
+      - name: Resolve Snyk IaC monitor metadata
+        if: steps.snyk_iac_config.outputs.enabled == 'true'
+        id: snyk_iac_meta
+        shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
+
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && -n "${PR_NUMBER:-}" ]]; then
+            target_reference="pr-${PR_NUMBER}"
+          elif [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+            target_reference="$ref_slug"
+          else
+            target_reference="$ref_slug"
+          fi
+
+          project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},kind=iac"
+
+          echo "target_reference=$target_reference" >> "$GITHUB_OUTPUT"
+          echo "project_tags=$project_tags" >> "$GITHUB_OUTPUT"
+
       - name: Monitor IaC in Snyk
         if: always() && steps.snyk_iac_config.outputs.enabled == 'true'
-        uses: snyk/actions/iac@master
+        uses: snyk/actions/iac@8e119fbb6c251787721d34ba683ed48eba792766
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -250,7 +278,8 @@ jobs:
             .
             --report
             --target-name=${{ env.APP_SBOM_PROJECT_NAME }}-iac
-            --target-reference=${{ github.ref_name }}
+            --target-reference=${{ steps.snyk_iac_meta.outputs.target_reference }}
+            --project-tags=${{ steps.snyk_iac_meta.outputs.project_tags }}
 
       - name: Fail on IaC findings
         if: always()
@@ -653,6 +682,34 @@ jobs:
           sarif_file: artifacts/security/snyk-app.sarif
           category: snyk-app
 
+      - name: Resolve Snyk app monitor metadata
+        if: steps.snyk_app_config.outputs.enabled == 'true'
+        id: snyk_app_meta
+        shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
+
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && -n "${PR_NUMBER:-}" ]]; then
+            target_reference="pr-${PR_NUMBER}"
+          elif [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+            target_reference="$ref_slug"
+          else
+            target_reference="$ref_slug"
+          fi
+
+          project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},kind=app"
+
+          echo "target_reference=$target_reference" >> "$GITHUB_OUTPUT"
+          echo "project_tags=$project_tags" >> "$GITHUB_OUTPUT"
+
       - name: Monitor app in Snyk
         if: always() && steps.snyk_app_config.outputs.enabled == 'true'
         shell: bash
@@ -663,7 +720,8 @@ jobs:
           --file=src/DevSecOpsPipelineSample.Api/obj/project.assets.json
           --package-manager=nuget
           --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
-          --target-reference=${{ github.ref_name }}
+          --target-reference=${{ steps.snyk_app_meta.outputs.target_reference }}
+          --project-tags=${{ steps.snyk_app_meta.outputs.project_tags }}
           --remote-repo-url=https://github.com/${{ github.repository }}
 
       - name: Fail on Snyk app findings
@@ -928,7 +986,7 @@ jobs:
         if: steps.snyk_image_config.outputs.enabled == 'true'
         id: snyk_image_scan
         continue-on-error: true
-        uses: snyk/actions/docker@master
+        uses: snyk/actions/docker@8e119fbb6c251787721d34ba683ed48eba792766
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -945,9 +1003,39 @@ jobs:
           sarif_file: artifacts/security/snyk-image.sarif
           category: snyk-image
 
+      - name: Resolve Snyk image monitor metadata
+        if: steps.snyk_image_config.outputs.enabled == 'true'
+        id: snyk_image_meta
+        shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          IMAGE_TAG: ${{ needs.image-build.outputs.image-tag }}
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          ref_slug="$(printf '%s' "$GITHUB_REF_NAME" | tr '/:@' '---')"
+          image_tag_slug="$(printf '%s' "$IMAGE_TAG" | tr '/:@' '---')"
+
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && -n "${PR_NUMBER:-}" ]]; then
+            target_reference="pr-${PR_NUMBER}"
+          elif [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+            target_reference="$image_tag_slug"
+          else
+            target_reference="$ref_slug"
+          fi
+
+          project_tags="repo=${GITHUB_REPOSITORY#*/},event=${GITHUB_EVENT_NAME},ref=${ref_slug},commit=${short_sha},image_tag=${image_tag_slug},kind=image"
+
+          echo "target_reference=$target_reference" >> "$GITHUB_OUTPUT"
+          echo "project_tags=$project_tags" >> "$GITHUB_OUTPUT"
+
       - name: Monitor image in Snyk
         if: always() && steps.snyk_image_config.outputs.enabled == 'true'
-        uses: snyk/actions/docker@master
+        uses: snyk/actions/docker@8e119fbb6c251787721d34ba683ed48eba792766
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -956,7 +1044,8 @@ jobs:
           args: >-
             --file=Dockerfile
             --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-image
-            --target-reference=${{ github.ref_name }}
+            --target-reference=${{ steps.snyk_image_meta.outputs.target_reference }}
+            --project-tags=${{ steps.snyk_image_meta.outputs.project_tags }}
 
       - name: Fail on Snyk image findings
         if: always() && steps.snyk_image_config.outputs.enabled == 'true' && steps.snyk_image_scan.outcome == 'failure'
