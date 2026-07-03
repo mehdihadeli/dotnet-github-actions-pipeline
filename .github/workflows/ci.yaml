@@ -939,7 +939,7 @@ jobs:
             --sarif-file-output=artifacts/security/snyk-image.sarif
 
       - name: Upload Snyk image SARIF
-        if: always() && steps.snyk_image_config.outputs.enabled == 'true'
+        if: always() && steps.snyk_image_config.outputs.enabled == 'true' && hashFiles('artifacts/security/snyk-image.sarif') != ''
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-image.sarif
