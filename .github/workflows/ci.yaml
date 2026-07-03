@@ -167,6 +167,25 @@ jobs:
           directories: |
             artifacts/security
 
+      - name: Resolve Snyk IaC configuration
+        id: snyk_iac_config
+        shell: bash
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [[ -z "${SNYK_TOKEN}" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SNYK_TOKEN not configured. Skip Snyk IaC scan."
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      # Snyk GitHub Actions docs:
+      # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
+      # - IaC action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-infrastructure-as-code-action
+      # - Setup action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-setup-action
+
       - name: Run Checkov IaC scan
         id: checkov
         continue-on-error: true
@@ -185,12 +204,53 @@ jobs:
           sarif_file: artifacts/security/checkov.sarif
           category: checkov
 
-      - name: Fail on Checkov findings
-        if: steps.checkov.outcome == 'failure'
+      - name: Run Snyk IaC scan
+        if: steps.snyk_iac_config.outputs.enabled == 'true'
+        id: snyk_iac_scan
+        continue-on-error: true
+        uses: snyk/actions/iac@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: >-
+            .
+            --severity-threshold=high
+            --sarif-file-output=artifacts/security/snyk-iac.sarif
+
+      - name: Upload Snyk IaC SARIF
+        if: always() && steps.snyk_iac_config.outputs.enabled == 'true'
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: artifacts/security/snyk-iac.sarif
+          category: snyk-iac
+
+      - name: Monitor IaC in Snyk
+        if: always() && steps.snyk_iac_config.outputs.enabled == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: snyk/actions/iac@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: >-
+            .
+            --report
+            --target-name=${{ env.APP_SBOM_PROJECT_NAME }}-iac
+            --target-reference=${{ github.ref_name }}
+
+      - name: Fail on IaC findings
+        if: always()
         shell: bash
         run: |
-          echo "::error::Checkov found IaC or pipeline misconfigurations."
-          exit 1
+          if [[ "${{ steps.snyk_iac_scan.outcome }}" == 'failure' ]]; then
+            echo "::error::Snyk IaC scan found high or critical misconfigurations."
+            exit 1
+          fi
+
+          if [[ "${{ steps.checkov.outcome }}" == 'failure' ]]; then
+            echo "::error::Checkov found IaC or pipeline misconfigurations."
+            exit 1
+          fi
+
+          exit 0
 
   sast-codeql:
     name: sast-codeql
@@ -420,9 +480,6 @@ jobs:
       - name: Setup .NET and restore
         uses: ./.github/actions/setup
 
-      - name: Setup Snyk CLI
-        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
-
       - name: Install Cosign
         if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -537,41 +594,63 @@ jobs:
           sarif_file: artifacts/security/grype-app.sarif
           category: grype-app
 
-      - name: Run Snyk app scan
-        id: snyk_app_scan
+      - name: Resolve Snyk app configuration
+        id: snyk_app_config
         shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           if [[ -z "${SNYK_TOKEN}" ]]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "status=0" >> "$GITHUB_OUTPUT"
             echo "SNYK_TOKEN not configured. Skip Snyk app scan."
             exit 0
           fi
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
-          set +e
-          snyk test \
-            --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj \
-            --severity-threshold=high \
+
+      # Snyk GitHub Actions docs:
+      # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
+      # - .NET action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-dotnet-action
+      # - Setup action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-setup-action
+
+      - name: Run Snyk app scan
+        if: steps.snyk_app_config.outputs.enabled == 'true'
+        id: snyk_app_scan
+        continue-on-error: true
+        uses: snyk/actions/dotnet@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: >-
+            --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+            --severity-threshold=high
             --sarif-file-output=artifacts/security/snyk-app.sarif
-          status=$?
-          set -e
-          echo "status=${status}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Snyk app SARIF
-        if: always() && steps.snyk_app_scan.outputs.enabled == 'true'
+        if: always() && steps.snyk_app_config.outputs.enabled == 'true'
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-app.sarif
           category: snyk-app
 
+      - name: Monitor app in Snyk
+        if: always() && steps.snyk_app_config.outputs.enabled == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: snyk/actions/dotnet@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: monitor
+          args: >-
+            --file=src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj
+            --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-app
+            --target-reference=${{ github.ref_name }}
+            --remote-repo-url=https://github.com/${{ github.repository }}
+
       - name: Fail on Snyk app findings
-        if: always() && steps.snyk_app_scan.outputs.enabled == 'true' && steps.snyk_app_scan.outputs.status != '0'
+        if: always() && steps.snyk_app_config.outputs.enabled == 'true' && steps.snyk_app_scan.outcome == 'failure'
         uses: ./.github/actions/fail-on-snyk-findings
         with:
-          status: ${{ steps.snyk_app_scan.outputs.status }}
+          status: "1"
           message: Snyk app scan found high or critical vulnerabilities.
 
       - name: Upload app SBOM to Dependency-Track
@@ -703,9 +782,6 @@ jobs:
           echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Snyk CLI
-        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
-
       - name: Install Cosign
         if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -809,41 +885,64 @@ jobs:
           sarif_file: artifacts/security/grype-image.sarif
           category: grype-image
 
-      - name: Run Snyk image scan
-        id: snyk_image_scan
+      - name: Resolve Snyk image configuration
+        id: snyk_image_config
         shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          IMAGE_REF: ${{ needs.image-build.outputs.image-ref }}
         run: |
           if [[ -z "${SNYK_TOKEN}" ]]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "status=0" >> "$GITHUB_OUTPUT"
             echo "SNYK_TOKEN not configured. Skip Snyk image scan."
             exit 0
           fi
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
-          set +e
-          snyk container test "$IMAGE_REF" \
-            --severity-threshold=high \
+
+      # Snyk GitHub Actions docs:
+      # - Overview: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities
+      # - Docker action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-docker-action
+      # - Setup action: https://docs.snyk.io/developer-tools/integrations/snyk-ci-cd-integrations/github-actions-for-snyk-setup-and-checking-for-vulnerabilities/snyk-setup-action
+
+      - name: Run Snyk image scan
+        if: steps.snyk_image_config.outputs.enabled == 'true'
+        id: snyk_image_scan
+        continue-on-error: true
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ needs.image-build.outputs.image-ref }}
+          args: >-
+            --file=Dockerfile
+            --severity-threshold=high
             --sarif-file-output=artifacts/security/snyk-image.sarif
-          status=$?
-          set -e
-          echo "status=${status}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Snyk image SARIF
-        if: always() && steps.snyk_image_scan.outputs.enabled == 'true'
+        if: always() && steps.snyk_image_config.outputs.enabled == 'true'
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: artifacts/security/snyk-image.sarif
           category: snyk-image
 
+      - name: Monitor image in Snyk
+        if: always() && steps.snyk_image_config.outputs.enabled == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: monitor
+          image: ${{ needs.image-build.outputs.image-ref }}
+          args: >-
+            --file=Dockerfile
+            --project-name=${{ env.APP_SBOM_PROJECT_NAME }}-image
+            --target-reference=${{ github.ref_name }}
+
       - name: Fail on Snyk image findings
-        if: always() && steps.snyk_image_scan.outputs.enabled == 'true' && steps.snyk_image_scan.outputs.status != '0'
+        if: always() && steps.snyk_image_config.outputs.enabled == 'true' && steps.snyk_image_scan.outcome == 'failure'
         uses: ./.github/actions/fail-on-snyk-findings
         with:
-          status: ${{ steps.snyk_image_scan.outputs.status }}
+          status: "1"
           message: Snyk image scan found high or critical vulnerabilities.
 
       - name: Upload image SBOM to Dependency-Track
