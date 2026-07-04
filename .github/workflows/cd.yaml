@@ -249,7 +249,7 @@ jobs:
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'direct'
-        uses: azure/aks-set-context@v4
+        uses: azure/aks-set-context@0f6a7a712dd90901e06e8ecb972e773574dee819 # v4
         with:
           resource-group: ${{ vars.AKS_RESOURCE_GROUP }}
           cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
@@ -259,14 +259,14 @@ jobs:
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'direct'
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415 # v4
 
       - name: Deploy manifests to AKS directly
         if: >-
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'direct'
-        uses: Azure/k8s-deploy@v5
+        uses: Azure/k8s-deploy@e84e0e29ee2acf291bb57dd0e8870dc0432e1627 # v5
         with:
           action: deploy
           strategy: basic
@@ -531,7 +531,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup k6
-        uses: grafana/setup-k6-action@v1.2.1
+        uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
         with:
           k6-version: "1.2.3"
 
@@ -726,7 +726,7 @@ jobs:
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'direct'
-        uses: azure/aks-set-context@v4
+        uses: azure/aks-set-context@0f6a7a712dd90901e06e8ecb972e773574dee819 # v4
         with:
           resource-group: ${{ vars.AKS_RESOURCE_GROUP }}
           cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
@@ -736,14 +736,14 @@ jobs:
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'direct'
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415 # v4
 
       - name: Deploy manifests to AKS directly
         if: >-
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'direct'
-        uses: Azure/k8s-deploy@v5
+        uses: Azure/k8s-deploy@e84e0e29ee2acf291bb57dd0e8870dc0432e1627 # v5
         with:
           action: deploy
           strategy: basic
@@ -974,7 +974,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup k6
-        uses: grafana/setup-k6-action@v1.2.1
+        uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
         with:
           k6-version: "1.2.3"
 
