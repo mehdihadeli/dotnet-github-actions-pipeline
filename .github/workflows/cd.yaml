@@ -282,7 +282,7 @@ jobs:
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'flux'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: mehdihadeli/dotnet-github-actions-pipeline/.github/actions/checkout-code@main
         with:
           repository: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
           ref: ${{ vars.AKS_FLUX_GITOPS_BRANCH != '' && vars.AKS_FLUX_GITOPS_BRANCH || 'main' }}
@@ -528,7 +528,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: mehdihadeli/dotnet-github-actions-pipeline/.github/actions/checkout-code@main
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1.2.1
@@ -759,7 +759,7 @@ jobs:
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'flux'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: mehdihadeli/dotnet-github-actions-pipeline/.github/actions/checkout-code@main
         with:
           repository: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
           ref: ${{ vars.AKS_FLUX_GITOPS_BRANCH != '' && vars.AKS_FLUX_GITOPS_BRANCH || 'main' }}
@@ -971,7 +971,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: mehdihadeli/dotnet-github-actions-pipeline/.github/actions/checkout-code@main
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1.2.1
