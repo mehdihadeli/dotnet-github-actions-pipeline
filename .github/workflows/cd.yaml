@@ -524,6 +524,9 @@ jobs:
   post-deploy-k6:
     name: "Stage 5: Post-deploy k6 Check"
     if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.fork == false &&
       needs.prepare-deployment.outputs.deploy-enabled == 'true' &&
       needs.deploy.outputs.app-url != ''
     needs:
@@ -535,6 +538,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
+        if: >-
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_repository.fork == false
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -974,7 +981,11 @@ jobs:
 
   post-deploy-k6-production:
     name: "Stage 9: Production k6 Check"
-    if: needs.deploy-production.result == 'success'
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.fork == false &&
+      needs.deploy-production.result == 'success'
     needs:
       - deploy-production
       - post-deploy-smoke-production
@@ -983,6 +994,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
+        if: >-
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_repository.fork == false
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
