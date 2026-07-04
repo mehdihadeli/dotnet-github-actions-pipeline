@@ -6,6 +6,10 @@ on:
       - CI
     types:
       - completed
+    branches:
+      - main
+    tags:
+      - "**"
 
 permissions: {}
 
