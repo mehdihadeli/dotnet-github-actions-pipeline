@@ -1,51 +1,40 @@
 # DevSecOps .NET GitHub Actions Sample
 
+**Security-first .NET 10 CI/CD pipeline with staged verification, signed artifacts, SBOM generation, and promotion evidence.**
+
 [![CI](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/ci.yaml/badge.svg)](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/ci.yaml)
 [![CD](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/cd.yaml/badge.svg)](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/cd.yaml)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet)
-![Security Pipeline](https://img.shields.io/badge/Pipeline-DevSecOps-111827)
-![SBOM](https://img.shields.io/badge/SBOM-CycloneDX-0A7EA4)
-![Signing](https://img.shields.io/badge/Signing-Cosign-3C3C3C)
+![Pipeline](https://img.shields.io/badge/pipeline-devsecops-111827)
+![SBOM](https://img.shields.io/badge/SBOM-CycloneDX%20%7C%20Syft-0A7EA4)
+![Signing](https://img.shields.io/badge/signing-Cosign-3C3C3C)
 
-Practical .NET 10 DevSecOps sample that shows how to build a security-first GitHub Actions platform with repo-local composite actions, split CI/CD workflows, supply-chain hardening, machine-readable promotion evidence, and staged post-deploy verification.
+> Practical DevSecOps sample that keeps implementation visible in source instead of hiding it behind opaque reusable workflows. Repeated workflow glue is extracted into small repo-local composite actions, while core validation, security, signing, and deployment logic stays easy to inspect.
 
-This repository is not trying to hide the interesting parts behind opaque reusable workflows. The implementation stays visible in source, while repeated workflow glue is extracted into small local composite actions that are easy to inspect.
+Perfect for: platform engineers, DevOps teams, .NET developers, and security-minded teams building GitHub Actions pipelines with explicit quality and trust boundaries.
 
-## 🎯 Why this repo exists
+## 🎯 Overview
 
-Many sample pipelines stop at `restore`, `build`, `test`, and one scanner. This sample goes further and keeps the boundaries explicit:
+This repository demonstrates a security-first .NET delivery pipeline with real CI/CD concerns wired together end to end:
 
-- quality validation before expensive stages
-- separate SAST, app SCA, image SCA, and deployment-time checks
-- explicit security gate before image publication
-- signed and verified artifacts before deployment
-- CI evidence passed into CD as machine-readable promotion context
-- post-deploy ZAP validation after staged deployment
+- **Workflow Design**: Separate CI and CD workflows with stage-oriented job boundaries
+- **Quality Gates**: Formatting, warning-as-error builds, analyzers, Dockerfile linting, and secret scanning
+- **SAST**: Semgrep, Checkov, CodeQL, and optional Sonar analysis
+- **SCA and SBOM**: Trivy, Grype, optional Snyk, CycloneDX app SBOM, and Syft image SBOM
+- **Supply Chain Controls**: GHCR publish, keyless Cosign signing, signature verification, and GitHub attestations
+- **Promotion Evidence**: Machine-readable CI evidence handed from CI into CD
+- **Deployment Verification**: Signed image verification before deploy plus staged ZAP baseline validation
 
-## ✨ At a glance
+## 🧭 Quick Navigation
 
-| Area                     | What this sample demonstrates                                                                   |
-| ------------------------ | ----------------------------------------------------------------------------------------------- |
-| Workflow design          | Separate `CI` and `CD` workflows with stage-oriented job naming and least-privilege permissions |
-| Quality gates            | Formatting, warnings-as-errors style build, Roslyn analyzers, Gitleaks, Dockerfile lint         |
-| SAST                     | Semgrep, Checkov, CodeQL, optional Sonar                                                        |
-| SCA and SBOM             | Trivy, Grype, optional Snyk, CycloneDX app SBOM, Syft image SBOM                                |
-| Supply chain             | GHCR publish, keyless Cosign signing, signature verification, GitHub attestations               |
-| Promotion control        | Central security gate plus `ci-evidence` bundle with deployment intent                          |
-| Post-deploy verification | Re-verify signed image in CD, then run ZAP baseline against staged runtime                      |
-
-## 🧭 Quick navigation
-
-| Start here                                             | Description                                 |
-| ------------------------------------------------------ | ------------------------------------------- |
-| [docs/index.md](docs/index.md)                         | Documentation landing page                  |
-| [docs/architecture.md](docs/architecture.md)           | Architecture and trust-boundary overview    |
-| [docs/ci-cd-pipeline.md](docs/ci-cd-pipeline.md)       | Full CI/CD walkthrough                      |
-| [docs/security-config.md](docs/security-config.md)     | Security tools, policies, and configuration |
-| [docs/github-secrets.md](docs/github-secrets.md)       | Required and optional secrets and variables |
-| [docs/project-structure.md](docs/project-structure.md) | Repository map                              |
-| [docs/api-reference.md](docs/api-reference.md)         | API surface                                 |
-| [docs/troubleshooting.md](docs/troubleshooting.md)     | Common failure and recovery paths           |
+- [Documentation Index](docs/index.md)
+- [Architecture Overview](docs/architecture.md)
+- [CI/CD Pipeline Guide](docs/ci-cd-pipeline.md)
+- [Security Configuration](docs/security-config.md)
+- [GitHub Secrets and Variables](docs/github-secrets.md)
+- [Project Structure](docs/project-structure.md)
+- [API Reference](docs/api-reference.md)
+- [Troubleshooting Guide](docs/troubleshooting.md)
 
 ## 🏗️ Architecture
 
@@ -57,39 +46,38 @@ flowchart LR
   SAST --> BT[Build and Test]
   BT --> APP[App Security and App SBOM]
   APP --> IMG[Image Build and Image Security]
-  IMG --> GATE[Security Gate]
+  IMG --> GATE[Central Security Gate]
   GATE --> PUB[Publish Sign Verify Attest]
   PUB --> EVIDENCE[CI Evidence Bundle]
   EVIDENCE --> CD[CD Workflow]
   CD --> VERIFY[Verify Signed Image]
-  VERIFY --> DEPLOY[Deploy to Staged Runtime]
+  VERIFY --> DEPLOY[Deploy to Azure Container Apps]
   DEPLOY --> ZAP[ZAP Baseline]
   ZAP --> REPORT[Deployment Evidence]
 ```
 
-CI flow:
+### Pipeline Flow
 
 ```text
-Source -> Quality Gates -> SAST -> Build/Test -> App Security -> Image Build -> Image Security -> Security Gate -> Publish/Sign/Attest -> Evidence
+Developer -> Pull Request or Push -> CI Workflow -> Security Gate -> Signed Image + Evidence -> CD Workflow -> Verify -> Deploy -> DAST -> Deployment Evidence
 ```
 
-CD flow:
-
-```text
-CI Evidence -> Verify Signed Image -> Deploy -> ZAP Baseline -> Deployment Evidence
-```
-
-## 🚀 Quick start
+## 🚀 Quick Start
 
 ### Prerequisites
 
 - .NET 10 SDK
 - Docker Desktop or Docker Engine
 - Git
+- Access to GitHub Actions if you want to exercise CI/CD remotely
+- Azure credentials and environment configuration only if you want to exercise deployment
 
 ### 1. Clone and bootstrap
 
 ```bash
+git clone https://github.com/mehdihadeli/dotnet-github-actions-pipeline.git
+cd dotnet-github-actions-pipeline
+
 dotnet tool restore
 dotnet husky install
 SOLUTION_PATH=DevSecOpsPipelineSample.slnx dotnet tool run husky -- run --name setup-solution-restore
@@ -102,32 +90,250 @@ dotnet test --solution DevSecOpsPipelineSample.slnx
 docker build -t devsecops-pipeline-sample .
 ```
 
-### 3. Run the workflows
+### 3. Run CI and CD
 
-- push or open a pull request to execute CI automatically
-- use `workflow_dispatch` when you want to override `sonar_enabled` or `publish_image`
-- let `cd.yaml` promote only from successful `CI` runs that emitted valid `ci-evidence`
+- Push a branch or open a pull request to run CI automatically
+- Use `workflow_dispatch` when you want to override `sonar_enabled` or opt into `publish_image`
+- Let `cd.yaml` promote only successful CI runs that emitted valid `ci-evidence`
 
-## 🧩 Core capabilities
+### 4. Optional local security integration
 
-### CI and CD model
+If you want to test BOM upload and vulnerability management locally, use the Dependency-Track stack under `deployments/dependency-track/`.
 
-- `ci.yaml` owns validation, app and image security, publication, signing, attestation, and CI evidence generation
-- `cd.yaml` consumes CI evidence, re-verifies the signed image, deploys to a staged runtime, and runs DAST
-- stage names are human-readable so run history is easy to scan in GitHub Actions
+## 📋 Implementation Phases
 
-### Reusable workflow building blocks
+### ✅ Phase 1: Developer Validation
 
-- small repo-local composite actions keep repeated glue centralized without hiding behavior
-- shared metadata, SARIF upload, GHCR login, Cosign setup, image signing, and CI evidence assembly live under `.github/actions/`
-- each local action is intentionally narrow enough to inspect quickly in source
+- Local tool bootstrap with dotnet tools and Husky
+- Fast pre-commit formatting checks
+- Pre-push build, test, analyzer, and Gitleaks enforcement
 
-### Security posture
+### ✅ Phase 2: Quality Gates
 
-- application and container image are treated as separate security surfaces
-- app and image BOMs are generated, persisted, and uploaded separately
-- image publishing only happens after the central security gate passes
-- CI and CD both participate in supply-chain trust, not only the publish stage
+- `dotnet format` validation
+- Warning-as-error style build checks
+- Explicit Roslyn analyzer execution
+- Dockerfile linting and secret detection
+
+### ✅ Phase 3: SAST and IaC Analysis
+
+- Semgrep for fast application and config scanning
+- Checkov for GitHub Actions, Dockerfile, and IaC-style misconfiguration coverage
+- CodeQL for deeper semantic analysis
+- Optional SonarCloud or SonarQube analysis
+
+### ✅ Phase 4: Build, Test, and Coverage
+
+- Release build and test execution
+- TRX, Microsoft Testing Platform coverage, Cobertura, HTML, Markdown, and lcov outputs
+- Optional Coveralls publishing
+
+### ✅ Phase 5: Application Security and SBOM
+
+- CycloneDX application SBOM generation
+- Blocking Trivy app scan
+- Advisory Grype scan
+- Optional Snyk overlay scan
+- Optional Dependency-Track BOM upload
+
+### ✅ Phase 6: Container Build and Image Security
+
+- Immutable image build artifact generation
+- Syft image SBOM generation
+- Blocking Trivy image scan
+- Advisory Grype image scan
+- Optional Snyk container overlay
+
+### ✅ Phase 7: Security Gate and Promotion Control
+
+- Central pass or fail evaluation across app and image security stages
+- Publish only after security gate success
+- CI evidence bundle creation for downstream promotion decisions
+
+### ✅ Phase 8: Supply Chain Trust
+
+- GHCR image publish
+- Keyless Cosign signing for SBOMs and images
+- Signature verification by digest
+- GitHub build provenance attestation
+
+### ✅ Phase 9: Deployment and Runtime Verification
+
+- CI-to-CD promotion through `workflow_run`
+- Image signature re-verification before deploy
+- Azure Container Apps deployment
+- ZAP baseline scan against staged runtime
+- Deployment evidence recording
+
+## 🛡️ Security Features
+
+### Vulnerability Scanning
+
+- **Semgrep** for fast SAST coverage
+- **Checkov** for workflow, Dockerfile, and IaC-style checks
+- **CodeQL** for GitHub-native semantic code scanning
+- **Trivy** as the primary blocking app and image scanner
+- **Grype** as advisory second-opinion app and image scanning
+- **Snyk** as optional managed overlay when `SNYK_TOKEN` is configured
+
+### Supply Chain Hardening
+
+- **CycloneDX** for application SBOM generation
+- **Syft** for runtime-oriented image SBOM generation
+- **Cosign keyless signing** using GitHub OIDC
+- **Digest-based verification** before promotion and before deployment
+- **GitHub attestations** for build provenance
+
+### Policy and Audit Controls
+
+```yaml
+security-model:
+  quality-gates: required
+  app-scan-blocking: trivy
+  image-scan-blocking: trivy
+  advisory-scanners:
+    - grype
+    - snyk-optional
+  signing: cosign-keyless
+  promotion-evidence: required
+  deploy-time-verification: required
+```
+
+### Security Outputs
+
+- SARIF uploads to the GitHub Security tab from Semgrep, Checkov, Trivy, Grype, and optional Snyk
+- Separate app and image SBOM artifacts
+- Machine-readable CI evidence for CD decisions
+- Deployment-time evidence after staged verification and DAST
+
+## 🔧 Configuration
+
+### Required deployment secrets
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+### Optional integration secrets
+
+- `DEPENDENCY_TRACK_URL`
+- `DEPENDENCY_TRACK_API_KEY`
+- `GITLEAKS_LICENSE`
+- `SONAR_PROJECT_KEY`
+- `SONAR_ORGANIZATION`
+- `SONAR_HOST_URL`
+- `SONAR_TOKEN`
+- `SNYK_TOKEN`
+
+### Optional repository variable
+
+- `SONAR_CI_ENABLED=false` to disable Sonar by default for CI runs
+
+### Optional manual workflow inputs
+
+- `sonar_enabled` to disable Sonar only for one manual run
+- `publish_image` to opt into publish, sign, and attest from a manual CI run
+
+### Azure environment settings
+
+- `AZURE_RESOURCE_GROUP`
+- `CONTAINER_APP_NAME`
+- `STAGED_API_URL`
+
+For full configuration details, see [docs/github-secrets.md](docs/github-secrets.md) and [docs/security-config.md](docs/security-config.md).
+
+## 📊 Usage Examples
+
+### Local validation
+
+```bash
+dotnet tool restore
+dotnet husky install
+dotnet test --solution DevSecOpsPipelineSample.slnx
+docker build -t devsecops-pipeline-sample .
+```
+
+### Workflow execution
+
+```text
+Push or Pull Request -> run CI automatically
+Actions -> CI -> Run workflow -> optional sonar_enabled or publish_image override
+Successful CI with evidence -> triggers CD workflow_run path
+```
+
+### Dependency-Track integration
+
+```text
+App SBOM   -> artifacts/sbom/app/bom.json
+Image SBOM -> artifacts/sbom/image/image.cdx.json
+Upload     -> .github/actions/upload-dependency-track-bom
+```
+
+### Documentation-first exploration
+
+```text
+Start with docs/index.md
+Then architecture.md for trust boundaries
+Then ci-cd-pipeline.md for stage behavior
+Then security-config.md for policy and scanner details
+```
+
+## 📈 Monitoring and Outputs
+
+### Generated artifacts
+
+- Test results in TRX format
+- Coverage outputs in native `.coverage`, Cobertura, HTML, Markdown, and lcov formats
+- App and image SBOM artifacts
+- SARIF findings for GitHub code scanning
+- CI evidence and deployment evidence bundles
+
+### GitHub-facing outputs
+
+- Pull request comments from evidence stages
+- Code scanning results in the GitHub Security tab
+- Workflow summaries for CI and CD runs
+- Attestation and signature verification trail for published images
+
+## 🔍 Troubleshooting
+
+### Tool bootstrap issues
+
+```bash
+dotnet tool restore
+dotnet husky install
+SOLUTION_PATH=DevSecOpsPipelineSample.slnx dotnet tool run husky -- run --name setup-solution-restore
+```
+
+### Local test failures
+
+```bash
+dotnet test --solution DevSecOpsPipelineSample.slnx
+./scripts/run-tests.sh
+```
+
+### Docker build failures
+
+```bash
+docker build -t devsecops-pipeline-sample .
+docker images | grep devsecops-pipeline-sample
+```
+
+### CI or CD configuration issues
+
+- Confirm required GitHub secrets and environment variables are configured
+- Verify `ci-evidence` was produced by the CI run before expecting CD promotion
+- Review [docs/troubleshooting.md](docs/troubleshooting.md) and [docs/github-secrets.md](docs/github-secrets.md)
+
+## 🗂️ Repository Highlights
+
+- `.github/workflows/ci.yaml` for validation, security, publication, signing, attestation, and CI evidence
+- `.github/workflows/cd.yaml` for promotion, deploy, staged DAST, and deployment evidence
+- `.github/actions/` for repo-local composite actions that centralize repeated workflow glue
+- `deployments/dependency-track/` for local BOM ingestion experiments
+- `docs/` for architecture, configuration, API, and troubleshooting guidance
+- `src/DevSecOpsPipelineSample.Api/` for the sample application surface
+- `tests/` for automated test coverage
 
 ## 📚 Documentation
 
@@ -138,227 +344,21 @@ docker build -t devsecops-pipeline-sample .
 - [GitHub Secrets and Variables](docs/github-secrets.md)
 - [Project Structure](docs/project-structure.md)
 - [API Reference](docs/api-reference.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- [Troubleshooting Guide](docs/troubleshooting.md)
 
-## 🗂️ Repository structure
+## 📞 Support and Project Links
 
-| Path                                             | Purpose                                                                                                                                     |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/actions/setup`                          | Restore SDK, tools, and solution dependencies                                                                                               |
-| `.github/actions/format`                         | Run `dotnet format` validation                                                                                                              |
-| `.github/actions/style`                          | Run warning-as-error build validation                                                                                                       |
-| `.github/actions/analyzers`                      | Run Roslyn analyzers explicitly                                                                                                             |
-| `.github/actions/build`                          | Build solution in Release mode                                                                                                              |
-| `.github/actions/test`                           | Run tests, TRX, native Microsoft Testing Platform `.coverage`, converted Cobertura output, and optional coverage reporting/Coveralls upload |
-| `.github/actions/checkout-code`                  | Shared checkout wrapper with optional fetch-depth control                                                                                   |
-| `.github/actions/upload-sarif`                   | Shared SARIF upload wrapper for GitHub code scanning                                                                                        |
-| `.github/actions/resolve-snyk-config`            | Central Snyk app and image scan enablement logic                                                                                            |
-| `.github/actions/resolve-snyk-iac-config`        | Central Snyk IaC enablement logic                                                                                                           |
-| `.github/actions/resolve-snyk-monitor-metadata`  | Shared Snyk `target-reference` and `project-tags` resolver                                                                                  |
-| `.github/actions/resolve-version-metadata`       | Shared build version and image tag resolver; uses tag name for tagged builds, otherwise short SHA                                           |
-| `.github/actions/setup-cosign`                   | Pinned Cosign installer wrapper                                                                                                             |
-| `.github/actions/sign-keyless-blob`              | Reusable Cosign blob signing wrapper for SBOM bundles                                                                                       |
-| `.github/actions/verify-keyless-blob-signature`  | Reusable Cosign blob verification wrapper for SBOM bundles                                                                                  |
-| `.github/actions/login-ghcr`                     | Shared GHCR login wrapper                                                                                                                   |
-| `.github/actions/sign-published-image`           | Attach image SBOM and sign published image by digest                                                                                        |
-| `.github/actions/verify-keyless-image-signature` | Verify published image keyless signature by digest                                                                                          |
-| `.github/actions/create-ci-evidence`             | Generate CI evidence summary and machine-readable deployment metadata                                                                       |
-| `.github/actions/download-ci-evidence-artifacts` | Restore the standard CI evidence bundle layout in `record-and-notify`                                                                       |
-| `.github/actions/publish`                        | Build and optionally push Docker image                                                                                                      |
-| `.github/actions/upload-dependency-track-bom`    | Reusable CycloneDX BOM upload action for Dependency-Track                                                                                   |
-| `.github/workflows/ci.yaml`                      | CI workflow for quality, SAST, app and image SCA, BOM upload, signing, and attestation                                                      |
-| `.github/workflows/cd.yaml`                      | CD workflow for deployment, post-deploy verification, and ZAP                                                                               |
-| `docs`                                           | Project documentation set for architecture, pipeline behavior, security, configuration, API surface, and troubleshooting                    |
-| `deployments/dependency-track`                   | Local Dependency-Track + PostgreSQL + Trivy server stack with optional API bootstrap script                                                 |
+- [Repository](https://github.com/mehdihadeli/dotnet-github-actions-pipeline)
+- [Actions](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions)
+- [Security](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/security)
+- [Issues](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/issues)
 
-## 🛠️ Pipeline stages and job map
+## 📈 Project Stats
 
-### CI workflow
+- **CI/CD Workflows**: 2
+- **CI Stages**: 9
+- **CD Stages**: 5
+- **Documentation Guides**: 8
+- **Primary Security Layers**: quality, SAST, app SCA, image SCA, signing, attestation, DAST
 
-| Stage   | Job                       | Purpose                                                                                                                                                                                            |
-| ------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stage 1 | `quality-check`           | Format, style, analyzers, Gitleaks secret scan, Dockerfile lint                                                                                                                                    |
-| Stage 2 | `sast-semgrep`            | Fast Semgrep SAST gate after quality validation                                                                                                                                                    |
-| Stage 2 | `sast-iac-checkov`        | Checkov scans GitHub Actions, Dockerfile, and secrets-style IaC and pipeline config, with optional Snyk IaC overlay and monitor                                                                    |
-| Stage 2 | `sast-codeql`             | Deep CodeQL semantic analysis for C#                                                                                                                                                               |
-| Stage 2 | `sast-sonar`              | Optional Sonar analysis with its own restore, build, test, and coverage-import flow                                                                                                                |
-| Stage 3 | `dotnet-build-test`       | Build, test, and publish Microsoft Testing Platform `.coverage`, Cobertura, HTML, Markdown, lcov, and optional Coveralls data                                                                      |
-| Stage 4 | `dotnet-app-sca-security` | Publish the application scan surface, sign and verify the CycloneDX app SBOM, run blocking Trivy, advisory Grype, optional blocking Snyk overlay, and upload the BOM to Dependency-Track           |
-| Stage 5 | `image-build`             | Resolve shared version metadata, build the image once, and export the immutable image artifact                                                                                                     |
-| Stage 6 | `image-sca-security`      | Restore the image artifact, generate and verify the image SBOM, run blocking Trivy plus advisory Grype, run optional blocking Snyk container overlay, and upload the image BOM to Dependency-Track |
-| Stage 7 | `security-gate`           | Central pass and fail enforcement across Sonar, app security, and image security                                                                                                                   |
-| Stage 8 | `image-publish`           | Optional GHCR publish on `main`, tags, or manual dispatch with `publish_image=true`                                                                                                                |
-| Stage 8 | `image-sign`              | Attach the image SBOM and sign the published image by digest with GitHub OIDC                                                                                                                      |
-| Stage 8 | `verify-image-signature`  | Verify the published image keyless signature before promotion evidence is finalized                                                                                                                |
-| Stage 8 | `attest`                  | Publish GitHub build provenance attestation for the signed image                                                                                                                                   |
-| Stage 9 | `record-and-notify`       | Collect CI evidence artifacts, build summary metadata, upload a `ci-evidence` bundle, and comment on pull requests                                                                                 |
-
-### CD workflow
-
-| Stage   | Job                      | Purpose                                                                                                       |
-| ------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Stage 1 | `prepare-deployment`     | Download `ci-evidence`, inspect machine-readable deployment metadata, and decide whether promotion is allowed |
-| Stage 2 | `verify-image-signature` | Re-verify the CI-signed image at promotion time                                                               |
-| Stage 3 | `deploy`                 | Log in to Azure and update Azure Container Apps with the verified image digest                                |
-| Stage 4 | `zap-baseline`           | Run staged passive DAST against the resolved staged endpoint                                                  |
-| Stage 5 | `record-and-notify`      | Persist deployment evidence and summary output for the promotion run                                          |
-
-## 🛡️ Security outputs and integrations
-
-### GitHub Security tab
-
-| Source      | Upload behavior                               |
-| ----------- | --------------------------------------------- |
-| CodeQL      | Uploads directly to GitHub Security tab       |
-| Semgrep     | SARIF uploads to GitHub Security tab          |
-| Checkov     | SARIF uploads to GitHub Security tab          |
-| Trivy app   | SARIF uploads to GitHub Security tab          |
-| Grype app   | SARIF uploads to GitHub Security tab          |
-| Snyk app    | SARIF uploads when `SNYK_TOKEN` is configured |
-| Trivy image | SARIF uploads to GitHub Security tab          |
-| Grype image | SARIF uploads to GitHub Security tab          |
-| Snyk image  | SARIF uploads when `SNYK_TOKEN` is configured |
-
-CodeQL, Semgrep, Trivy, and Grype all surface findings in GitHub code scanning. Semgrep and Trivy remain the blocking CI gates in this sample.
-
-### Dependency-Track BOM uploads
-
-The sample uploads both generated CycloneDX BOMs to Dependency-Track through the reusable action at `.github/actions/upload-dependency-track-bom/action.yml`.
-
-| Surface | CI call site                                                     | BOM file                              | Project name                     | Project version                                                      |
-| ------- | ---------------------------------------------------------------- | ------------------------------------- | -------------------------------- | -------------------------------------------------------------------- |
-| App     | `dotnet-app-sca-security -> Upload app SBOM to Dependency-Track` | `artifacts/sbom/app/bom.json`         | `${APP_SBOM_PROJECT_NAME}`       | Shared build version from `.github/actions/resolve-version-metadata` |
-| Image   | `image-sca-security -> Upload image SBOM to Dependency-Track`    | `artifacts/sbom/image/image.cdx.json` | `${APP_SBOM_PROJECT_NAME}-image` | Shared build version from `image-build`                              |
-
-Version rule:
-
-| Build type    | Version value    |
-| ------------- | ---------------- |
-| Tagged build  | Git tag name     |
-| Non-tag build | Short commit SHA |
-
-Both uploads are gated only by whether `DEPENDENCY_TRACK_URL` and `DEPENDENCY_TRACK_API_KEY` are configured. If either one is missing, the action logs a skip and CI continues.
-
-For local Dependency-Track experiments, see `deployments/dependency-track/`.
-
-## 👨‍💻 Developer workflow
-
-### Local hooks and validation
-
-| Area           | Behavior                                                                                                   |
-| -------------- | ---------------------------------------------------------------------------------------------------------- |
-| Hook framework | Husky.Net installed as a local dotnet tool under `.husky/`                                                 |
-| `pre-commit`   | Runs fast formatting checks only                                                                           |
-| `pre-push`     | Runs Gitleaks in Docker plus analyzers, a local Release build that can restore if needed, and tests        |
-| Local Gitleaks | Uses `zricethezav/gitleaks:latest` so developers do not need a machine-level binary install                |
-| Docker missing | Pre-push fails with a targeted message before blocking the push                                            |
-| Hook strategy  | Secret scanning runs on `pre-push` instead of `pre-commit` to keep commit latency low                      |
-| Build commands | Husky `build` is local and allows restore; Husky `build-ci` assumes CI setup already restored dependencies |
-| CI behavior    | CI keeps Gitleaks enforcement and disables Husky execution with `HUSKY=0`                                  |
-| Coverage       | CI test stage also generates a downloadable HTML coverage artifact and markdown summary                    |
-
-Local setup after clone:
-
-```bash
-dotnet tool restore
-dotnet husky install
-SOLUTION_PATH=DevSecOpsPipelineSample.slnx dotnet tool run husky -- run --name setup-solution-restore
-```
-
-### Local validation commands
-
-```bash
-dotnet test --solution DevSecOpsPipelineSample.slnx
-docker build -t devsecops-pipeline-sample .
-```
-
-## ⚙️ Configuration
-
-### GitHub secrets and workflow inputs
-
-CI image publish/sign flows use the repository-scoped `GITHUB_TOKEN` for GHCR and do not require a separate `GHCR_TOKEN` secret.
-
-`cd.yaml` deployment expects:
-
-| Required deployment secrets | Purpose               |
-| --------------------------- | --------------------- |
-| `AZURE_CLIENT_ID`           | Azure OIDC client ID  |
-| `AZURE_TENANT_ID`           | Azure tenant ID       |
-| `AZURE_SUBSCRIPTION_ID`     | Azure subscription ID |
-
-Optional integration secrets:
-
-| Optional integration secret | Purpose                                                                     |
-| --------------------------- | --------------------------------------------------------------------------- |
-| `DEPENDENCY_TRACK_URL`      | Enable Dependency-Track BOM uploads                                         |
-| `DEPENDENCY_TRACK_API_KEY`  | Authenticate Dependency-Track BOM uploads                                   |
-| `GITLEAKS_LICENSE`          | Needed when running Gitleaks in an organization-owned GitHub repository     |
-| `SONAR_PROJECT_KEY`         | Enable Sonar analysis                                                       |
-| `SONAR_ORGANIZATION`        | SonarCloud organization                                                     |
-| `SONAR_HOST_URL`            | Self-hosted SonarQube URL; defaults to `https://sonarcloud.io` when omitted |
-| `SNYK_TOKEN`                | Enable managed Snyk overlay scans                                           |
-| `SONAR_TOKEN`               | Authenticate Sonar analysis                                                 |
-
-Optional repository variables:
-
-| Optional variable        | Purpose                                                                                                |
-| ------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `SONAR_CI_ENABLED=false` | Disable Sonar analysis by default for CI runs; when unset, CI-based Sonar analysis defaults to enabled |
-
-Optional manual workflow input:
-
-| Manual input    | Purpose                                                                                               |
-| --------------- | ----------------------------------------------------------------------------------------------------- |
-| `sonar_enabled` | `workflow_dispatch` input; defaults to `true` and disables Sonar only for that manual run             |
-| `publish_image` | `workflow_dispatch` input; defaults to `false` and opts into publish/sign/attest from a manual CI run |
-
-Cosign keyless signing uses GitHub OIDC and does not require a private signing key secret.
-
-### Azure deployment configuration
-
-CD workflow is triggered from a successful CI `workflow_run` and updates an existing Azure Container App by reading GitHub environment-scoped configuration. Provide:
-
-| Deployment setting                         | Purpose                                                                                             |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Environment names such as `dev` and `prod` | Keep deployment configuration separated by environment                                              |
-| `AZURE_RESOURCE_GROUP`                     | Target resource group                                                                               |
-| `CONTAINER_APP_NAME`                       | Target Azure Container App                                                                          |
-| `STAGED_API_URL`                           | Optional override if ZAP should scan a specific public endpoint instead of the resolved ingress URL |
-
-Promotion only proceeds when the CI `ci-evidence` bundle indicates auto-deploy is enabled and includes a signed or verified image digest plus a target environment.
-
-This sample keeps deployment generic on purpose. It demonstrates reusable workflow shape and local composite action layout without hard-coding project-specific infrastructure.
-
-## 🧠 Design notes
-
-### Supply chain hardening
-
-| Control                             | Reason                                                                                              |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Pinned external GitHub Actions      | Reduce supply-chain drift in workflows and composite actions                                        |
-| Semgrep from pinned container image | Avoid deprecated wrapper usage                                                                      |
-| Checkov                             | Add IaC and pipeline misconfiguration coverage for GitHub Actions and Dockerfile surfaces           |
-| Optional Sonar                      | Support teams already using SonarCloud or SonarQube quality gates                                   |
-| Trivy and Grype                     | Combine primary blocking scanner with advisory second opinion                                       |
-| Snyk CLI-driven scans               | Add optional managed overlay against restored NuGet assets                                          |
-| Syft SBOM generation                | Generate runtime-oriented image SBOMs                                                               |
-| ReportGenerator and Coveralls       | Produce local and external coverage outputs                                                         |
-| Cosign keyless signing              | Sign app SBOMs, image SBOMs, published images, and deploy-time verification checks with GitHub OIDC |
-| ZAP baseline                        | Add staged passive DAST after deployment                                                            |
-
-### Tooling choices
-
-| Tool or choice                      | Why it is here                                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| CodeQL                              | Adds deeper semantic analysis and GitHub-native code scanning for C#                                          |
-| Sonar                               | Adds broader quality-gate and hotspot analysis, but does not replace CodeQL or Semgrep                        |
-| Checkov                             | Covers workflow and container IaC misconfiguration gaps that SAST and SCA do not cover well                   |
-| Semgrep                             | Adds fast SAST coverage and fits CI gating well for app code and Dockerfile checks                            |
-| Gitleaks                            | Adds dedicated secret detection beyond general-purpose filesystem scanners                                    |
-| Trivy and Grype                     | Sit in the SCA layer here, even though Trivy also contributes misconfiguration and secret findings            |
-| Optional Snyk                       | Adds policy controls and a second managed vulnerability data source when `SNYK_TOKEN` is available            |
-| CycloneDX app SBOM                  | Gives stronger NuGet provenance than image-first tooling                                                      |
-| Syft image SBOM                     | Better fit for runtime layers and OS packages                                                                 |
-| Trivy as primary, Grype as advisory | Keeps one blocking scanner with a useful second opinion                                                       |
-| Cosign verification before deploy   | Reduces trust-on-first-use risk for published images                                                          |
-| ZAP baseline                        | Intentionally light-weight passive DAST; deeper authenticated DAST should live in a richer staged environment |
+This sample focuses on readable pipeline design, explicit security controls, and inspectable workflow behavior rather than minimal demo shortcuts.
