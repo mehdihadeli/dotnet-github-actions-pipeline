@@ -21,6 +21,10 @@ jobs:
   # =============================================================================
   prepare-deployment:
     name: "Stage 1: Deployment Intake"
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.fork == false
     runs-on: ubuntu-latest
     outputs:
       deploy-enabled: ${{ steps.prepare.outputs.deploy_enabled }}
@@ -279,6 +283,9 @@ jobs:
 
       - name: Checkout GitOps repository for Flux manifest update
         if: >-
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_repository.fork == false &&
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'flux'
@@ -529,6 +536,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup k6
         uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
@@ -756,6 +765,9 @@ jobs:
 
       - name: Checkout GitOps repository for Flux manifest update
         if: >-
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_repository.fork == false &&
           steps.deploy_config.outputs.enabled == 'true' &&
           steps.deploy_config.outputs.deploy_target == 'aks' &&
           steps.deploy_config.outputs.deploy_mode == 'flux'
@@ -972,6 +984,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup k6
         uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
