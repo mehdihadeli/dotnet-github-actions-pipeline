@@ -1,6 +1,6 @@
 # DevSecOps .NET GitHub Actions Sample
 
-**Security-first .NET 10 CI/CD pipeline with staged verification, signed artifacts, SBOM generation, and promotion evidence.**
+**Security-first .NET 10 CI/CD pipeline with target-environment verification, signed artifacts, SBOM generation, and promotion evidence.**
 
 [![CI](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/ci.yaml/badge.svg)](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/ci.yaml)
 [![CD](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/cd.yaml/badge.svg)](https://github.com/mehdihadeli/dotnet-github-actions-pipeline/actions/workflows/cd.yaml)
@@ -22,8 +22,9 @@ This repository demonstrates a security-first .NET delivery pipeline with real C
 - **SAST**: Semgrep, Checkov, CodeQL, and optional Sonar analysis
 - **SCA and SBOM**: Trivy, Grype, optional Snyk, CycloneDX app SBOM, and Syft image SBOM
 - **Supply Chain Controls**: GHCR publish, keyless Cosign signing, signature verification, and GitHub attestations
-- **Promotion Evidence**: Machine-readable CI evidence handed from CI into CD
-- **Deployment Verification**: Signed image verification before deploy plus staged ZAP baseline validation
+- **Promotion Evidence**: Machine-readable CI evidence handed from CI into CD with environment routing
+- **Deployment Targets**: Config-driven Azure Container Apps, AKS direct deploy, or AKS plus Flux manifest promotion
+- **Deployment Verification**: Signed image verification before deploy plus post-deploy smoke, k6, and ZAP validation
 
 ## 🧭 Quick Navigation
 
@@ -51,15 +52,21 @@ flowchart LR
   PUB --> EVIDENCE[CI Evidence Bundle]
   EVIDENCE --> CD[CD Workflow]
   CD --> VERIFY[Verify Signed Image]
-  VERIFY --> DEPLOY[Deploy to Azure Container Apps]
-  DEPLOY --> ZAP[ZAP Baseline]
-  ZAP --> REPORT[Deployment Evidence]
+  VERIFY --> DEV[Deploy to Dev]
+  VERIFY --> STAGE[Deploy to Staging]
+  DEV --> DEVRUNTIME[Dev Smoke + k6 + ZAP]
+  DEVRUNTIME --> REPORT[Deployment Evidence]
+  STAGE --> STAGERUNTIME[Staging Smoke + k6 + ZAP]
+  STAGERUNTIME --> APPROVAL[Manual Approval for Production]
+  APPROVAL --> PROD[Deploy to Production]
+  PROD --> PRODRUNTIME[Prod Smoke + k6 + ZAP]
+  PRODRUNTIME --> REPORT
 ```
 
 ### Pipeline Flow
 
 ```text
-Developer -> Pull Request or Push -> CI Workflow -> Security Gate -> Signed Image + Evidence -> CD Workflow -> Verify -> Deploy -> DAST -> Deployment Evidence
+Developer -> Pull Request or Push -> CI Workflow -> Security Gate -> Signed Image + Evidence -> CD Workflow -> Verify -> Dev deploy or Staging deploy -> Dev ends after runtime checks, Staging continues through manual production approval -> Production deploy -> Prod Smoke + k6 + ZAP -> Deployment Evidence
 ```
 
 ## 🚀 Quick Start
@@ -94,7 +101,10 @@ docker build -t devsecops-pipeline-sample .
 
 - Push a branch or open a pull request to run CI automatically
 - Use `workflow_dispatch` when you want to override `sonar_enabled` or opt into `publish_image`
+- Merges to `main` emit CI evidence for `dev` deployment
+- Tags emit CI evidence for `staging` deployment
 - Let `cd.yaml` promote only successful CI runs that emitted valid `ci-evidence`
+- Configure the GitHub `production` environment with required reviewers if you want a manual gate before production deployment
 
 ### 4. Optional local security integration
 
@@ -161,8 +171,11 @@ If you want to test BOM upload and vulnerability management locally, use the Dep
 
 - CI-to-CD promotion through `workflow_run`
 - Image signature re-verification before deploy
-- Azure Container Apps deployment
-- ZAP baseline scan against staged runtime
+- Main branch auto-routes to `dev`
+- Tag push auto-routes to `staging`
+- Production promotion uses a manual GitHub Environment gate after successful staging runtime validation
+- Config-driven deploy target selection: Azure Container Apps, AKS direct, or AKS plus Flux
+- Smoke, k6, and ZAP validation against the deployed runtime
 - Deployment evidence recording
 
 ## 🛡️ Security Features
@@ -204,7 +217,7 @@ security-model:
 - SARIF uploads to the GitHub Security tab from Semgrep, Checkov, Trivy, Grype, and optional Snyk
 - Separate app and image SBOM artifacts
 - Machine-readable CI evidence for CD decisions
-- Deployment-time evidence after staged verification and DAST
+- Deployment-time evidence after target-environment verification and DAST
 
 ## 🔧 Configuration
 
@@ -234,11 +247,296 @@ security-model:
 - `sonar_enabled` to disable Sonar only for one manual run
 - `publish_image` to opt into publish, sign, and attest from a manual CI run
 
-### Azure environment settings
+### Deployment target settings
 
-- `AZURE_RESOURCE_GROUP`
-- `CONTAINER_APP_NAME`
-- `STAGED_API_URL`
+| Variable                     | Scope                | Required when           | Notes                                     |
+| ---------------------------- | -------------------- | ----------------------- | ----------------------------------------- |
+| `DEPLOY_TARGET`              | shared               | always                  | `aca` or `aks`                            |
+| `TARGET_API_URL`             | shared               | optional                | published URL override for smoke, k6, ZAP |
+| `AZURE_RESOURCE_GROUP`       | environment-specific | `DEPLOY_TARGET=aca`     | ACA resource group                        |
+| `CONTAINER_APP_NAME`         | environment-specific | `DEPLOY_TARGET=aca`     | ACA app name                              |
+| `AKS_DEPLOY_MODE`            | shared               | `DEPLOY_TARGET=aks`     | `direct` or `flux`                        |
+| `AKS_RESOURCE_GROUP`         | environment-specific | `DEPLOY_TARGET=aks`     | AKS cluster resource group                |
+| `AKS_CLUSTER_NAME`           | environment-specific | `DEPLOY_TARGET=aks`     | AKS cluster name                          |
+| `AKS_TARGET_API_URL`         | environment-specific | optional for AKS        | falls back to `TARGET_API_URL`            |
+| `AKS_MANIFESTS_PATH`         | shared               | direct AKS              | manifest root for `Azure/k8s-deploy`      |
+| `AKS_NAMESPACE`              | shared               | optional for direct AKS | defaults to `default`                     |
+| `AKS_ROLLOUT_TIMEOUT`        | shared               | optional for direct AKS | uses action default when unset            |
+| `AKS_FLUX_GITOPS_REPOSITORY` | shared               | Flux AKS                | GitOps repo                               |
+| `AKS_FLUX_GITOPS_BRANCH`     | shared               | optional for Flux AKS   | defaults to `main`                        |
+| `AKS_FLUX_MANIFEST_PATH`     | environment-specific | Flux AKS                | usually differs by environment            |
+| `AKS_FLUX_IMAGE_REPOSITORY`  | shared               | Flux AKS                | must match manifest `image:` prefix       |
+| `AKS_FLUX_COMMIT_USER_NAME`  | shared               | optional for Flux AKS   | defaults to GitHub Actions bot            |
+| `AKS_FLUX_COMMIT_USER_EMAIL` | shared               | optional for Flux AKS   | defaults to GitHub Actions bot email      |
+
+Use only public credential-free values for `TARGET_API_URL` and `AKS_TARGET_API_URL`.
+
+### Post-deploy validation settings
+
+These settings control tests that run against the real deployed address after promotion:
+
+| Variable                         | Scope  | Default            | Purpose                   |
+| -------------------------------- | ------ | ------------------ | ------------------------- |
+| `POST_DEPLOY_API_TEST_PATH`      | shared | `/weatherforecast` | smoke and k6 path         |
+| `POST_DEPLOY_EXPECTED_MIN_ITEMS` | shared | `1`                | minimum JSON array length |
+| `K6_VUS`                         | shared | `5`                | virtual users             |
+| `K6_DURATION`                    | shared | `15s`              | test duration             |
+| `K6_P95_MS`                      | shared | `1000`             | p95 latency threshold     |
+
+CD resolves a real published URL first, then runs:
+
+1. smoke validation
+2. k6 validation
+3. ZAP baseline
+
+For Azure Container Apps, CD uses `TARGET_API_URL` when provided, otherwise it resolves the live Container App FQDN.
+
+For AKS, CD uses `AKS_TARGET_API_URL` or falls back to shared `TARGET_API_URL`.
+
+Do not put usernames, passwords, signed query strings, or other secrets in those URLs. CD writes the resolved URL into workflow outputs and test evidence, so the URL must be a public credential-free endpoint.
+
+For `DEPLOY_TARGET=aks` and `AKS_DEPLOY_MODE=direct`:
+
+- `AKS_MANIFESTS_PATH`
+- `AKS_NAMESPACE` optional, defaults to `default`
+- `AKS_ROLLOUT_TIMEOUT` optional, defaults to the Azure `k8s-deploy` action timeout
+
+For `DEPLOY_TARGET=aks` and `AKS_DEPLOY_MODE=flux`:
+
+- `AKS_FLUX_GITOPS_REPOSITORY`
+- `AKS_FLUX_GITOPS_BRANCH` optional, defaults to `main`
+- `AKS_FLUX_MANIFEST_PATH`
+- `AKS_FLUX_IMAGE_REPOSITORY`
+- `AKS_FLUX_GITOPS_TOKEN` secret when the GitOps repo is separate from this application repo
+- `AKS_FLUX_COMMIT_USER_NAME` optional
+- `AKS_FLUX_COMMIT_USER_EMAIL` optional
+
+### Example GitHub Environment configurations
+
+Use separate GitHub Environments named `dev`, `staging`, and `production`.
+
+Azure Container Apps example:
+
+`dev`
+
+```text
+DEPLOY_TARGET=aca
+AZURE_RESOURCE_GROUP=rg-devsecops-dev
+CONTAINER_APP_NAME=devsecops-api-dev
+TARGET_API_URL=https://devsecops-api-dev.contoso.com
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=5
+K6_DURATION=15s
+K6_P95_MS=1000
+```
+
+`staging`
+
+```text
+DEPLOY_TARGET=aca
+AZURE_RESOURCE_GROUP=rg-devsecops-staging
+CONTAINER_APP_NAME=devsecops-api-staging
+TARGET_API_URL=https://devsecops-api-staging.contoso.com
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=10
+K6_DURATION=30s
+K6_P95_MS=1200
+```
+
+`production`
+
+```text
+DEPLOY_TARGET=aca
+AZURE_RESOURCE_GROUP=rg-devsecops-prod
+CONTAINER_APP_NAME=devsecops-api-prod
+TARGET_API_URL=https://devsecops-api.contoso.com
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=15
+K6_DURATION=30s
+K6_P95_MS=1500
+```
+
+AKS direct example:
+
+`dev`
+
+```text
+DEPLOY_TARGET=aks
+AKS_DEPLOY_MODE=direct
+AKS_RESOURCE_GROUP=rg-platform-dev
+AKS_CLUSTER_NAME=aks-dev-eus
+AKS_NAMESPACE=api
+AKS_MANIFESTS_PATH=deploy/aks/base
+AKS_TARGET_API_URL=https://api-dev.contoso.com
+AKS_ROLLOUT_TIMEOUT=10m
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=5
+K6_DURATION=15s
+K6_P95_MS=1000
+```
+
+`staging`
+
+```text
+DEPLOY_TARGET=aks
+AKS_DEPLOY_MODE=direct
+AKS_RESOURCE_GROUP=rg-platform-staging
+AKS_CLUSTER_NAME=aks-staging-eus
+AKS_NAMESPACE=api
+AKS_MANIFESTS_PATH=deploy/aks/base
+AKS_TARGET_API_URL=https://api-staging.contoso.com
+AKS_ROLLOUT_TIMEOUT=10m
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=10
+K6_DURATION=30s
+K6_P95_MS=1200
+```
+
+`production`
+
+```text
+DEPLOY_TARGET=aks
+AKS_DEPLOY_MODE=direct
+AKS_RESOURCE_GROUP=rg-platform-prod
+AKS_CLUSTER_NAME=aks-prod-eus
+AKS_NAMESPACE=api
+AKS_MANIFESTS_PATH=deploy/aks/base
+AKS_TARGET_API_URL=https://api.contoso.com
+AKS_ROLLOUT_TIMEOUT=10m
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=15
+K6_DURATION=30s
+K6_P95_MS=1500
+```
+
+AKS plus Flux example:
+
+`dev`
+
+```text
+DEPLOY_TARGET=aks
+AKS_DEPLOY_MODE=flux
+AKS_RESOURCE_GROUP=rg-platform-dev
+AKS_CLUSTER_NAME=aks-dev-eus
+AKS_TARGET_API_URL=https://api-dev.contoso.com
+AKS_FLUX_GITOPS_REPOSITORY=contoso/fleet-infra
+AKS_FLUX_GITOPS_BRANCH=main
+AKS_FLUX_MANIFEST_PATH=clusters/dev/apps/devsecops-api/deployment.yaml
+AKS_FLUX_IMAGE_REPOSITORY=ghcr.io/mehdihadeli/devsecops-pipeline-sample
+AKS_FLUX_COMMIT_USER_NAME=github-actions[bot]
+AKS_FLUX_COMMIT_USER_EMAIL=41898282+github-actions[bot]@users.noreply.github.com
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=5
+K6_DURATION=15s
+K6_P95_MS=1000
+```
+
+`staging`
+
+```text
+DEPLOY_TARGET=aks
+AKS_DEPLOY_MODE=flux
+AKS_RESOURCE_GROUP=rg-platform-staging
+AKS_CLUSTER_NAME=aks-staging-eus
+AKS_TARGET_API_URL=https://api-staging.contoso.com
+AKS_FLUX_GITOPS_REPOSITORY=contoso/fleet-infra
+AKS_FLUX_GITOPS_BRANCH=main
+AKS_FLUX_MANIFEST_PATH=clusters/staging/apps/devsecops-api/deployment.yaml
+AKS_FLUX_IMAGE_REPOSITORY=ghcr.io/mehdihadeli/devsecops-pipeline-sample
+AKS_FLUX_COMMIT_USER_NAME=github-actions[bot]
+AKS_FLUX_COMMIT_USER_EMAIL=41898282+github-actions[bot]@users.noreply.github.com
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=10
+K6_DURATION=30s
+K6_P95_MS=1200
+```
+
+`production`
+
+```text
+DEPLOY_TARGET=aks
+AKS_DEPLOY_MODE=flux
+AKS_RESOURCE_GROUP=rg-platform-prod
+AKS_CLUSTER_NAME=aks-prod-eus
+AKS_TARGET_API_URL=https://api.contoso.com
+AKS_FLUX_GITOPS_REPOSITORY=contoso/fleet-infra
+AKS_FLUX_GITOPS_BRANCH=main
+AKS_FLUX_MANIFEST_PATH=clusters/prod/apps/devsecops-api/deployment.yaml
+AKS_FLUX_IMAGE_REPOSITORY=ghcr.io/mehdihadeli/devsecops-pipeline-sample
+AKS_FLUX_COMMIT_USER_NAME=github-actions[bot]
+AKS_FLUX_COMMIT_USER_EMAIL=41898282+github-actions[bot]@users.noreply.github.com
+POST_DEPLOY_API_TEST_PATH=/weatherforecast
+POST_DEPLOY_EXPECTED_MIN_ITEMS=1
+K6_VUS=15
+K6_DURATION=30s
+K6_P95_MS=1500
+```
+
+### Example manifest layouts
+
+Example layout for `AKS_MANIFESTS_PATH=deploy/aks/base`:
+
+```text
+deploy/
+  aks/
+    base/
+      deployment.yaml
+      service.yaml
+      ingress.yaml
+      kustomization.yaml
+```
+
+Example `deployment.yaml` image line expected by `Azure/k8s-deploy`:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsecops-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: devsecops-api
+          image: ghcr.io/mehdihadeli/devsecops-pipeline-sample:placeholder
+```
+
+Example layout for `AKS_FLUX_MANIFEST_PATH=clusters/prod/apps/devsecops-api/deployment.yaml` in `AKS_FLUX_GITOPS_REPOSITORY`:
+
+```text
+clusters/
+  prod/
+    apps/
+      devsecops-api/
+        deployment.yaml
+        service.yaml
+        kustomization.yaml
+```
+
+Example `deployment.yaml` image line expected by Flux mode rewrite:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsecops-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: devsecops-api
+          image: ghcr.io/mehdihadeli/devsecops-pipeline-sample:current
+```
+
+The Flux rewrite step updates the first `image:` line that starts with `AKS_FLUX_IMAGE_REPOSITORY`, so the repository prefix must match exactly.
 
 For full configuration details, see [docs/github-secrets.md](docs/github-secrets.md) and [docs/security-config.md](docs/security-config.md).
 
@@ -259,6 +557,7 @@ docker build -t devsecops-pipeline-sample .
 Push or Pull Request -> run CI automatically
 Actions -> CI -> Run workflow -> optional sonar_enabled or publish_image override
 Successful CI with evidence -> triggers CD workflow_run path
+Environment config chooses aca, aks/direct, or aks/flux deployment behavior
 ```
 
 ### Dependency-Track integration

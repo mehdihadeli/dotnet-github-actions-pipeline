@@ -10,6 +10,10 @@ inputs:
     description: Path to solution or solution filter.
     required: false
     default: DevSecOpsPipelineSample.slnx
+  test-filter-queries:
+    description: Optional newline-delimited xUnit v3 filter queries to run sequential solution-level test passes.
+    required: false
+    default: ""
   configuration:
     description: Build configuration to test.
     required: false
@@ -115,6 +119,7 @@ runs:
     shell: bash
     env:
       TEST_SOLUTION_PATH: ${{ inputs.solution-path }}
+      TEST_FILTER_QUERIES: ${{ inputs.test-filter-queries }}
       TEST_CONFIGURATION: ${{ inputs.configuration }}
       TEST_RESULTS_DIRECTORY: ${{ inputs.results-directory }}
       TEST_COVERAGE_OUTPUT_FORMAT: ${{ inputs.coverage-output-format }}

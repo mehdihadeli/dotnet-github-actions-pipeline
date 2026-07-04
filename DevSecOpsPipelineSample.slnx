@@ -3,6 +3,7 @@
     <Project Path="src/DevSecOpsPipelineSample.Api/DevSecOpsPipelineSample.Api.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/DevSecOpsPipelineSample.Api.Tests/DevSecOpsPipelineSample.Api.Tests.csproj" />
+    <Project Path="tests/DevSecOpsPipelineSample.UnitTests/DevSecOpsPipelineSample.UnitTests.csproj" />
+    <Project Path="tests/DevSecOpsPipelineSample.EndToEndTests/DevSecOpsPipelineSample.EndToEndTests.csproj" />
   </Folder>
 </Solution>

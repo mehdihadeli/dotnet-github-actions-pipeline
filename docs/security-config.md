@@ -1,6 +1,6 @@
 # Security Configuration
 
-This repository layers multiple security controls across source, dependencies, containers, provenance, and staged runtime validation.
+This repository layers multiple security controls across source, dependencies, containers, provenance, and target-environment runtime validation.
 
 ## Security coverage map
 

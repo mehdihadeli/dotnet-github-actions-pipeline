@@ -87,7 +87,7 @@ runs:
         DEPLOY_SOURCE="main"
       elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
         AUTO_DEPLOY="true"
-        TARGET_ENVIRONMENT="prod"
+        TARGET_ENVIRONMENT="staging"
         DEPLOY_SOURCE="tag"
       fi
 

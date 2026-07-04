@@ -99,12 +99,19 @@ Checks:
 - verify evidence contains `autoDeploy=true`
 - verify a target environment and signed or verified image digest are present
 
+Expected environment routing:
+
+- merges to `main` should emit `targetEnvironment=dev`
+- tags should emit `targetEnvironment=staging`
+
 ### Deploy job skipped because of missing config
 
 Checks:
 
-- verify target GitHub environment has `AZURE_RESOURCE_GROUP`
-- verify target GitHub environment has `CONTAINER_APP_NAME`
+- verify target GitHub environment has `DEPLOY_TARGET`
+- for `DEPLOY_TARGET=aca`, verify `AZURE_RESOURCE_GROUP` and `CONTAINER_APP_NAME`
+- for `DEPLOY_TARGET=aks` and `AKS_DEPLOY_MODE=direct`, verify `AKS_RESOURCE_GROUP`, `AKS_CLUSTER_NAME`, and `AKS_MANIFESTS_PATH`
+- for `DEPLOY_TARGET=aks` and `AKS_DEPLOY_MODE=flux`, verify `AKS_FLUX_GITOPS_REPOSITORY`, `AKS_FLUX_MANIFEST_PATH`, and `AKS_FLUX_IMAGE_REPOSITORY`
 
 ### Azure login fails
 
@@ -118,8 +125,61 @@ Checks:
 
 Checks:
 
-- set `STAGED_API_URL` when automatic Container App FQDN resolution is not sufficient
-- verify Container App ingress is public and resolvable
+- for Azure Container Apps, set `TARGET_API_URL` when automatic Container App FQDN resolution is not sufficient
+- for AKS, set `AKS_TARGET_API_URL` or shared `TARGET_API_URL`
+- verify the chosen target endpoint is public and resolvable by the ZAP job
+
+### Deploy fails because target URL is unsafe
+
+Cause:
+
+- `TARGET_API_URL` or `AKS_TARGET_API_URL` contains embedded credentials, a signed query string, or a fragment
+
+Why the workflow blocks it:
+
+- CD writes the resolved URL into workflow outputs and smoke evidence
+- putting secrets in the URL would expose them in logs or artifacts
+
+Fix:
+
+- use a plain public endpoint such as `https://api.contoso.com`
+- do not use URLs like `https://user:password@api.contoso.com`
+- do not use signed URLs such as `https://api.contoso.com?token=...`
+
+### Production promotion did not start
+
+Checks:
+
+- verify the original CD run targeted `staging`
+- verify staging deploy succeeded
+- verify staging smoke, k6, and ZAP all succeeded
+- verify the `production` GitHub Environment exists
+
+### Production promotion is waiting
+
+Expected behavior:
+
+- if the GitHub `production` environment has required reviewers, the workflow pauses before `deploy-production`
+- approve the environment deployment in GitHub to continue promotion
+
+### Production smoke, k6, or ZAP failed
+
+Checks:
+
+- verify the `production` environment points to production-specific URLs and resources
+- verify `TARGET_API_URL` or `AKS_TARGET_API_URL` actually resolves to the production endpoint
+- verify `POST_DEPLOY_API_TEST_PATH` exists in production
+- verify `K6_P95_MS`, `K6_VUS`, and `K6_DURATION` are realistic for the production environment
+
+### Flux GitOps push fails
+
+Checks:
+
+- verify `AKS_FLUX_GITOPS_REPOSITORY` points to the intended GitOps repository
+- verify `AKS_FLUX_GITOPS_BRANCH` exists or defaults correctly to `main`
+- verify `AKS_FLUX_MANIFEST_PATH` exists inside the checked-out GitOps repository
+- verify `AKS_FLUX_GITOPS_TOKEN` has write access when the GitOps repository is separate from the application repository
+- verify the manifest contains an `image:` line that starts with `AKS_FLUX_IMAGE_REPOSITORY`
 
 ## Signature and provenance issues
 

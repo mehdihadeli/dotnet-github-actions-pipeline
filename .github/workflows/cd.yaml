@@ -114,13 +114,13 @@ jobs:
           echo "image_with_digest=$IMAGE_WITH_DIGEST" >> "$GITHUB_OUTPUT"
 
   # =============================================================================
-  # STAGE 3: DEPLOY TO STAGED RUNTIME
-  # Push previously verified image into Azure Container Apps runtime.
-  # Pipeline tools: Azure Login action and Azure CLI.
-  # Local tools: az login, az containerapp update, az containerapp show.
+  # STAGE 3: DEPLOY TO TARGET RUNTIME
+  # Push previously verified image into the target environment selected by CI evidence.
+  # Pipeline tools: Azure Login action, Azure CLI, kubectl, and git for Flux mode.
+  # Local tools: az login, az containerapp update, az aks get-credentials, kubectl, git.
   # =============================================================================
   deploy:
-    name: "Stage 3: Deploy to Staged Runtime"
+    name: "Stage 3: Deploy to Target Runtime"
     if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
     needs:
       - prepare-deployment
@@ -129,10 +129,13 @@ jobs:
     environment: ${{ needs.prepare-deployment.outputs.target-environment }}
     outputs:
       app-url: ${{ steps.resolve_app_url.outputs.app_url }}
+      deploy-target: ${{ steps.deploy_config.outputs.deploy_target }}
+      deploy-mode: ${{ steps.deploy_config.outputs.deploy_mode }}
     permissions:
       id-token: write
-      contents: read
+      contents: write
       packages: read
+      actions: read
     steps:
       - name: Login to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
@@ -145,41 +148,90 @@ jobs:
         id: deploy_config
         shell: bash
         env:
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
+          AKS_DEPLOY_MODE: ${{ vars.AKS_DEPLOY_MODE }}
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+          TARGET_API_URL: ${{ vars.TARGET_API_URL }}
+          AKS_RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP }}
+          AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME }}
+          AKS_NAMESPACE: ${{ vars.AKS_NAMESPACE }}
+          AKS_MANIFESTS_PATH: ${{ vars.AKS_MANIFESTS_PATH }}
+          AKS_TARGET_API_URL: ${{ vars.AKS_TARGET_API_URL }}
+          AKS_FLUX_GITOPS_REPOSITORY: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
+          AKS_FLUX_GITOPS_BRANCH: ${{ vars.AKS_FLUX_GITOPS_BRANCH }}
+          AKS_FLUX_MANIFEST_PATH: ${{ vars.AKS_FLUX_MANIFEST_PATH }}
+          AKS_FLUX_IMAGE_REPOSITORY: ${{ vars.AKS_FLUX_IMAGE_REPOSITORY }}
         run: |
+          deploy_target="${DEPLOY_TARGET:-aca}"
+          deploy_target="$(echo "$deploy_target" | tr '[:upper:]' '[:lower:]')"
+          deploy_mode="direct"
           missing=()
-          [[ -z "$RESOURCE_GROUP" ]] && missing+=("AZURE_RESOURCE_GROUP")
-          [[ -z "$CONTAINER_APP_NAME" ]] && missing+=("CONTAINER_APP_NAME")
+
+          case "$deploy_target" in
+            aca)
+              [[ -z "$RESOURCE_GROUP" ]] && missing+=("AZURE_RESOURCE_GROUP")
+              [[ -z "$CONTAINER_APP_NAME" ]] && missing+=("CONTAINER_APP_NAME")
+              ;;
+            aks)
+              deploy_mode="${AKS_DEPLOY_MODE:-direct}"
+              deploy_mode="$(echo "$deploy_mode" | tr '[:upper:]' '[:lower:]')"
+              [[ -z "$AKS_RESOURCE_GROUP" ]] && missing+=("AKS_RESOURCE_GROUP")
+              [[ -z "$AKS_CLUSTER_NAME" ]] && missing+=("AKS_CLUSTER_NAME")
+
+              case "$deploy_mode" in
+                direct)
+                  [[ -z "$AKS_MANIFESTS_PATH" ]] && missing+=("AKS_MANIFESTS_PATH")
+                  ;;
+                flux)
+                  [[ -z "$AKS_FLUX_GITOPS_REPOSITORY" ]] && missing+=("AKS_FLUX_GITOPS_REPOSITORY")
+                  [[ -z "$AKS_FLUX_MANIFEST_PATH" ]] && missing+=("AKS_FLUX_MANIFEST_PATH")
+                  [[ -z "$AKS_FLUX_IMAGE_REPOSITORY" ]] && missing+=("AKS_FLUX_IMAGE_REPOSITORY")
+                  ;;
+                *)
+                  echo "enabled=false" >> "$GITHUB_OUTPUT"
+                  echo "::error::Unsupported AKS_DEPLOY_MODE '$deploy_mode'. Supported values: direct, flux."
+                  exit 1
+                  ;;
+              esac
+              ;;
+            *)
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              echo "::error::Unsupported DEPLOY_TARGET '$deploy_target'. Supported values: aca, aks."
+              exit 1
+              ;;
+          esac
 
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping deploy. Missing required environment variables: ${missing[*]}"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_target=$deploy_target" >> "$GITHUB_OUTPUT"
+            echo "deploy_mode=$deploy_mode" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Deployment skipped (missing config)
         if: steps.deploy_config.outputs.enabled != 'true'
-        run: echo "Deploy skipped due to missing AZURE_RESOURCE_GROUP and/or CONTAINER_APP_NAME."
-
-      - name: Deploy to Azure
-        if: steps.deploy_config.outputs.enabled == 'true'
-        env:
-          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-          CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
-        run: |
-          # your az containerapp commands here
-          echo "Deploying..."
+        run: echo "Deploy skipped due to missing platform-specific configuration."
 
       - name: Azure login
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          (
+            steps.deploy_config.outputs.deploy_target == 'aca' ||
+            steps.deploy_config.outputs.deploy_mode == 'direct'
+          )
         uses: Azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy container image
+      - name: Deploy container image to Azure Container Apps
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aca'
         uses: Azure/cli@9eb25b8360668fb0ecbafa808d40e2197b2f5f52 # v3.0.0
         env:
           CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
@@ -192,46 +244,336 @@ jobs:
             --resource-group "$RESOURCE_GROUP"
             --image "$VERIFIED_IMAGE_WITH_DIGEST"
 
-      - name: Resolve staged API URL
-        id: resolve_app_url
-        uses: Azure/cli@9eb25b8360668fb0ecbafa808d40e2197b2f5f52 # v3.0.0
+      - name: Set AKS context
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'direct'
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ vars.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
+
+      - name: Setup kubectl
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'direct'
+        uses: azure/setup-kubectl@v4
+
+      - name: Deploy manifests to AKS directly
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'direct'
+        uses: Azure/k8s-deploy@v5
+        with:
+          action: deploy
+          strategy: basic
+          namespace: ${{ vars.AKS_NAMESPACE }}
+          manifests: ${{ vars.AKS_MANIFESTS_PATH }}
+          images: |
+            ${{ needs.verify-image-signature.outputs.image-with-digest }}
+          pull-images: false
+          timeout: ${{ vars.AKS_ROLLOUT_TIMEOUT }}
+
+      - name: Checkout GitOps repository for Flux manifest update
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'flux'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
+          ref: ${{ vars.AKS_FLUX_GITOPS_BRANCH != '' && vars.AKS_FLUX_GITOPS_BRANCH || 'main' }}
+          token: ${{ secrets.AKS_FLUX_GITOPS_TOKEN != '' && secrets.AKS_FLUX_GITOPS_TOKEN || secrets.GITHUB_TOKEN }}
+          path: gitops-repo
+
+      - name: Update Flux-tracked AKS manifest in GitOps repo
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'flux'
+        shell: bash
         env:
-          STAGED_API_URL: ${{ vars.STAGED_API_URL }}
+          TARGET_ENVIRONMENT: ${{ needs.prepare-deployment.outputs.target-environment }}
+          AKS_FLUX_GITOPS_REPOSITORY: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
+          AKS_FLUX_GITOPS_BRANCH: ${{ vars.AKS_FLUX_GITOPS_BRANCH }}
+          AKS_FLUX_MANIFEST_PATH: ${{ vars.AKS_FLUX_MANIFEST_PATH }}
+          AKS_FLUX_IMAGE_REPOSITORY: ${{ vars.AKS_FLUX_IMAGE_REPOSITORY }}
+          AKS_FLUX_COMMIT_USER_NAME: ${{ vars.AKS_FLUX_COMMIT_USER_NAME }}
+          AKS_FLUX_COMMIT_USER_EMAIL: ${{ vars.AKS_FLUX_COMMIT_USER_EMAIL }}
+          VERIFIED_IMAGE_WITH_DIGEST: ${{ needs.verify-image-signature.outputs.image-with-digest }}
+        run: |
+          branch="${AKS_FLUX_GITOPS_BRANCH:-main}"
+          manifest_path="gitops-repo/${AKS_FLUX_MANIFEST_PATH}"
+
+          if [[ ! -f "$manifest_path" ]]; then
+            echo "::error::AKS_FLUX_MANIFEST_PATH '$AKS_FLUX_MANIFEST_PATH' does not exist in GitOps repository '$AKS_FLUX_GITOPS_REPOSITORY'."
+            exit 1
+          fi
+
+          temp_file="$(mktemp)"
+          if ! awk -v repo="$AKS_FLUX_IMAGE_REPOSITORY" -v image="$VERIFIED_IMAGE_WITH_DIGEST" '
+            BEGIN { updated = 0 }
+            {
+              if ($0 ~ /^[[:space:]]*image:[[:space:]]*/) {
+                line = $0
+                sub(/^[[:space:]]*image:[[:space:]]*/, "", line)
+                gsub(/"/, "", line)
+                if (index(line, repo) == 1 && updated == 0) {
+                  sub(/image:[[:space:]].*/, "image: " image)
+                  updated = 1
+                }
+              }
+              print
+            }
+            END {
+              if (updated == 0) {
+                exit 2
+              }
+            }
+          ' "$manifest_path" > "$temp_file"; then
+            status=$?
+            rm -f "$temp_file"
+            if [[ $status -eq 2 ]]; then
+              echo "::error::No matching image line starting with '$AKS_FLUX_IMAGE_REPOSITORY' was found in '$AKS_FLUX_MANIFEST_PATH' inside '$AKS_FLUX_GITOPS_REPOSITORY'."
+            fi
+            exit $status
+          fi
+
+          mv "$temp_file" "$manifest_path"
+
+          cd gitops-repo
+
+          if git diff --quiet -- "$AKS_FLUX_MANIFEST_PATH"; then
+            echo "No manifest changes detected; desired image already present."
+            exit 0
+          fi
+
+          git config user.name "${AKS_FLUX_COMMIT_USER_NAME:-github-actions[bot]}"
+          git config user.email "${AKS_FLUX_COMMIT_USER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+          git add "$AKS_FLUX_MANIFEST_PATH"
+          git commit -m "chore: promote ${TARGET_ENVIRONMENT} AKS image"
+          git push origin "HEAD:${branch}"
+
+      - name: Resolve target API URL
+        id: resolve_app_url
+        if: steps.deploy_config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          DEPLOY_TARGET: ${{ steps.deploy_config.outputs.deploy_target }}
+          DEPLOY_MODE: ${{ steps.deploy_config.outputs.deploy_mode }}
+          TARGET_API_URL: ${{ vars.TARGET_API_URL }}
+          AKS_TARGET_API_URL: ${{ vars.AKS_TARGET_API_URL }}
           CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-        with:
-          inlineScript: |
-            if [[ -n "$STAGED_API_URL" ]]; then
-              echo "app_url=$STAGED_API_URL" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+        run: |
+          validate_safe_target_url() {
+            local url="$1"
 
-            FQDN="$(az containerapp show \
-              --name "$CONTAINER_APP_NAME" \
-              --resource-group "$RESOURCE_GROUP" \
-              --query properties.configuration.ingress.fqdn \
-              -o tsv)"
-
-            if [[ -z "${FQDN}" ]]; then
-              echo "::error::Unable to resolve public Container App FQDN. Set STAGED_API_URL environment variable for ZAP baseline scan."
+            if [[ ! "$url" =~ ^https?:// ]]; then
+              echo "::error::Target API URL must start with http:// or https://."
               exit 1
             fi
 
-            echo "app_url=https://${FQDN}" >> "$GITHUB_OUTPUT"
+            if [[ "$url" =~ ^https?://[^/]*@ ]]; then
+              echo "::error::Target API URL must not contain embedded credentials. Use a public endpoint without username or password in the URL."
+              exit 1
+            fi
+
+            if [[ "$url" == *\?* || "$url" == *\#* ]]; then
+              echo "::error::Target API URL must not contain query strings or fragments because workflow outputs and test artifacts would expose them."
+              exit 1
+            fi
+          }
+
+          if [[ "$DEPLOY_TARGET" == "aks" ]]; then
+            target_url="${AKS_TARGET_API_URL:-$TARGET_API_URL}"
+            if [[ -z "$target_url" ]]; then
+              echo "::error::Unable to resolve AKS target URL automatically. Set AKS_TARGET_API_URL or TARGET_API_URL for ZAP baseline scan."
+              exit 1
+            fi
+
+            validate_safe_target_url "$target_url"
+            echo "app_url=$target_url" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -n "$TARGET_API_URL" ]]; then
+            validate_safe_target_url "$TARGET_API_URL"
+            echo "app_url=$TARGET_API_URL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FQDN="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            -o tsv)"
+
+          if [[ -z "${FQDN}" ]]; then
+            echo "::error::Unable to resolve public Container App FQDN. Set TARGET_API_URL environment variable for ZAP baseline scan."
+            exit 1
+          fi
+
+          echo "app_url=https://${FQDN}" >> "$GITHUB_OUTPUT"
 
   # =============================================================================
-  # STAGE 4: DAST ON STAGED API
-  # Dynamic scan happens after deployment because runtime behavior, headers, auth edges,
-  # and exposed routes cannot be fully covered by SAST or SCA.
-  # Pipeline tool: OWASP ZAP baseline.
-  # Local tool: zap-baseline.py or OWASP ZAP desktop/proxy against staged endpoint.
+  # STAGE 4: POST-DEPLOY ENDPOINT SMOKE TEST
+  # Fail fast on basic reachability and response shape before heavier validation.
+  # Local tools: curl and jq against target endpoint.
   # =============================================================================
-  zap-baseline:
-    name: "Stage 4: DAST - ZAP Baseline"
-    if: needs.prepare-deployment.outputs.deploy-enabled == 'true'
+  post-deploy-smoke:
+    name: "Stage 4: Post-deploy Smoke Test"
+    if: >-
+      needs.prepare-deployment.outputs.deploy-enabled == 'true' &&
+      needs.deploy.outputs.app-url != ''
     needs:
       - prepare-deployment
       - deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Run smoke checks against target API
+        shell: bash
+        env:
+          TARGET_APP_URL: ${{ needs.deploy.outputs.app-url }}
+          API_TEST_PATH: ${{ vars.POST_DEPLOY_API_TEST_PATH }}
+          EXPECTED_MIN_ITEMS: ${{ vars.POST_DEPLOY_EXPECTED_MIN_ITEMS }}
+        run: |
+          base_url="${TARGET_APP_URL%/}"
+          api_path="${API_TEST_PATH:-/weatherforecast}"
+          expected_min_items="${EXPECTED_MIN_ITEMS:-1}"
+
+          if [[ "$api_path" != /* ]]; then
+            api_path="/${api_path}"
+          fi
+
+          mkdir -p smoke-evidence
+          target_url="${base_url}${api_path}"
+          status_code="$(curl \
+            --silent \
+            --show-error \
+            --location \
+            --header 'Accept: application/json' \
+            --dump-header smoke-evidence/headers.txt \
+            --output smoke-evidence/response.json \
+            --write-out '%{http_code}' \
+            "$target_url")"
+
+          if [[ "$status_code" != "200" ]]; then
+            echo "::error::Smoke test failed for $target_url with HTTP $status_code."
+            exit 1
+          fi
+
+          if ! grep -qi '^content-type: .*application/json' smoke-evidence/headers.txt; then
+            echo "::error::Smoke test expected application/json from $target_url."
+            exit 1
+          fi
+
+          jq -e --argjson expected_min_items "$expected_min_items" '
+            type == "array" and
+            length >= $expected_min_items and
+            all(
+              .[];
+              has("date") and
+              has("temperatureC") and
+              has("temperatureF") and
+              has("summary")
+            )
+          ' smoke-evidence/response.json > /dev/null
+
+          cat > smoke-evidence/summary.md <<EOF2
+          # Post-deploy Smoke Summary
+
+          - URL: ${target_url}
+          - HTTP status: ${status_code}
+          - Minimum items expected: ${expected_min_items}
+          EOF2
+
+          cat > smoke-evidence/summary.json <<EOF2
+          {
+            "targetUrl": "${target_url}",
+            "statusCode": ${status_code},
+            "expectedMinItems": ${expected_min_items}
+          }
+          EOF2
+
+      - name: Upload smoke test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: post-deploy-smoke-report
+          path: smoke-evidence/**
+
+  # =============================================================================
+  # STAGE 5: SHORT POST-DEPLOY K6 CHECK
+  # Validate latency and basic stability on a real target endpoint.
+  # Pipeline tools: Grafana k6 action and k6 CLI.
+  # Local tool: k6 run.
+  # =============================================================================
+  post-deploy-k6:
+    name: "Stage 5: Post-deploy k6 Check"
+    if: >-
+      needs.prepare-deployment.outputs.deploy-enabled == 'true' &&
+      needs.deploy.outputs.app-url != ''
+    needs:
+      - prepare-deployment
+      - deploy
+      - post-deploy-smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1.2.1
+        with:
+          k6-version: "1.2.3"
+
+      - name: Run k6 target endpoint check
+        shell: bash
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.app-url }}
+          API_PATH: ${{ vars.POST_DEPLOY_API_TEST_PATH }}
+          EXPECTED_MIN_ITEMS: ${{ vars.POST_DEPLOY_EXPECTED_MIN_ITEMS }}
+          K6_VUS: ${{ vars.K6_VUS }}
+          K6_DURATION: ${{ vars.K6_DURATION }}
+          K6_P95_MS: ${{ vars.K6_P95_MS }}
+        run: |
+          mkdir -p k6-evidence
+          k6 run \
+            --summary-export k6-evidence/summary.json \
+            tests/DevSecOpsPipelineSample.K6Tests/target-api-check.js | tee k6-evidence/output.txt
+
+      - name: Upload k6 report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: post-deploy-k6-report
+          path: k6-evidence/**
+
+  # =============================================================================
+  # STAGE 6: DAST ON TARGET API
+  # Dynamic scan happens after deployment because runtime behavior, headers, auth edges,
+  # and exposed routes cannot be fully covered by SAST or SCA.
+  # Pipeline tool: OWASP ZAP baseline.
+  # Local tool: zap-baseline.py or OWASP ZAP desktop/proxy against target endpoint.
+  # =============================================================================
+  zap-baseline:
+    name: "Stage 6: DAST - ZAP Baseline"
+    if: >-
+      needs.prepare-deployment.outputs.deploy-enabled == 'true' &&
+      needs.deploy.outputs.app-url != ''
+    needs:
+      - prepare-deployment
+      - deploy
+      - post-deploy-smoke
+      - post-deploy-k6
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -247,18 +589,453 @@ jobs:
           artifact_name: zap-baseline-report
 
   # =============================================================================
-  # STAGE 5: DEPLOYMENT EVIDENCE AND SUMMARY
+  # STAGE 7: DEPLOYMENT EVIDENCE AND SUMMARY
   # Persist deploy result, verified digest, and DAST outcome for release traceability.
   # =============================================================================
+  deploy-production:
+    name: "Stage 7: Promote to Production"
+    if: >-
+      needs.prepare-deployment.outputs.deploy-enabled == 'true' &&
+      needs.prepare-deployment.outputs.target-environment == 'staging' &&
+      needs.zap-baseline.result == 'success'
+    needs:
+      - prepare-deployment
+      - verify-image-signature
+      - zap-baseline
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      app-url: ${{ steps.resolve_app_url.outputs.app_url }}
+      deploy-target: ${{ steps.deploy_config.outputs.deploy_target }}
+      deploy-mode: ${{ steps.deploy_config.outputs.deploy_mode }}
+    permissions:
+      id-token: write
+      contents: write
+      packages: read
+      actions: read
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check deploy configuration
+        id: deploy_config
+        shell: bash
+        env:
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
+          AKS_DEPLOY_MODE: ${{ vars.AKS_DEPLOY_MODE }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+          TARGET_API_URL: ${{ vars.TARGET_API_URL }}
+          AKS_RESOURCE_GROUP: ${{ vars.AKS_RESOURCE_GROUP }}
+          AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME }}
+          AKS_NAMESPACE: ${{ vars.AKS_NAMESPACE }}
+          AKS_MANIFESTS_PATH: ${{ vars.AKS_MANIFESTS_PATH }}
+          AKS_TARGET_API_URL: ${{ vars.AKS_TARGET_API_URL }}
+          AKS_FLUX_GITOPS_REPOSITORY: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
+          AKS_FLUX_GITOPS_BRANCH: ${{ vars.AKS_FLUX_GITOPS_BRANCH }}
+          AKS_FLUX_MANIFEST_PATH: ${{ vars.AKS_FLUX_MANIFEST_PATH }}
+          AKS_FLUX_IMAGE_REPOSITORY: ${{ vars.AKS_FLUX_IMAGE_REPOSITORY }}
+        run: |
+          deploy_target="${DEPLOY_TARGET:-aca}"
+          deploy_target="$(echo "$deploy_target" | tr '[:upper:]' '[:lower:]')"
+          deploy_mode="direct"
+          missing=()
+
+          case "$deploy_target" in
+            aca)
+              [[ -z "$RESOURCE_GROUP" ]] && missing+=("AZURE_RESOURCE_GROUP")
+              [[ -z "$CONTAINER_APP_NAME" ]] && missing+=("CONTAINER_APP_NAME")
+              ;;
+            aks)
+              deploy_mode="${AKS_DEPLOY_MODE:-direct}"
+              deploy_mode="$(echo "$deploy_mode" | tr '[:upper:]' '[:lower:]')"
+              [[ -z "$AKS_RESOURCE_GROUP" ]] && missing+=("AKS_RESOURCE_GROUP")
+              [[ -z "$AKS_CLUSTER_NAME" ]] && missing+=("AKS_CLUSTER_NAME")
+
+              case "$deploy_mode" in
+                direct)
+                  [[ -z "$AKS_MANIFESTS_PATH" ]] && missing+=("AKS_MANIFESTS_PATH")
+                  ;;
+                flux)
+                  [[ -z "$AKS_FLUX_GITOPS_REPOSITORY" ]] && missing+=("AKS_FLUX_GITOPS_REPOSITORY")
+                  [[ -z "$AKS_FLUX_MANIFEST_PATH" ]] && missing+=("AKS_FLUX_MANIFEST_PATH")
+                  [[ -z "$AKS_FLUX_IMAGE_REPOSITORY" ]] && missing+=("AKS_FLUX_IMAGE_REPOSITORY")
+                  ;;
+                *)
+                  echo "enabled=false" >> "$GITHUB_OUTPUT"
+                  echo "::error::Unsupported AKS_DEPLOY_MODE '$deploy_mode'. Supported values: direct, flux."
+                  exit 1
+                  ;;
+              esac
+              ;;
+            *)
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              echo "::error::Unsupported DEPLOY_TARGET '$deploy_target'. Supported values: aca, aks."
+              exit 1
+              ;;
+          esac
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping production deploy. Missing required environment variables: ${missing[*]}"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_target=$deploy_target" >> "$GITHUB_OUTPUT"
+            echo "deploy_mode=$deploy_mode" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deployment skipped (missing config)
+        if: steps.deploy_config.outputs.enabled != 'true'
+        run: echo "Production deploy skipped due to missing platform-specific configuration."
+
+      - name: Azure login
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          (
+            steps.deploy_config.outputs.deploy_target == 'aca' ||
+            steps.deploy_config.outputs.deploy_mode == 'direct'
+          )
+        uses: Azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy container image to Azure Container Apps
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aca'
+        uses: Azure/cli@9eb25b8360668fb0ecbafa808d40e2197b2f5f52 # v3.0.0
+        env:
+          CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          VERIFIED_IMAGE_WITH_DIGEST: ${{ needs.verify-image-signature.outputs.image-with-digest }}
+        with:
+          inlineScript: >-
+            az containerapp update
+            --name "$CONTAINER_APP_NAME"
+            --resource-group "$RESOURCE_GROUP"
+            --image "$VERIFIED_IMAGE_WITH_DIGEST"
+
+      - name: Set AKS context
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'direct'
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ vars.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_CLUSTER_NAME }}
+
+      - name: Setup kubectl
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'direct'
+        uses: azure/setup-kubectl@v4
+
+      - name: Deploy manifests to AKS directly
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'direct'
+        uses: Azure/k8s-deploy@v5
+        with:
+          action: deploy
+          strategy: basic
+          namespace: ${{ vars.AKS_NAMESPACE }}
+          manifests: ${{ vars.AKS_MANIFESTS_PATH }}
+          images: |
+            ${{ needs.verify-image-signature.outputs.image-with-digest }}
+          pull-images: false
+          timeout: ${{ vars.AKS_ROLLOUT_TIMEOUT }}
+
+      - name: Checkout GitOps repository for Flux manifest update
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'flux'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
+          ref: ${{ vars.AKS_FLUX_GITOPS_BRANCH != '' && vars.AKS_FLUX_GITOPS_BRANCH || 'main' }}
+          token: ${{ secrets.AKS_FLUX_GITOPS_TOKEN != '' && secrets.AKS_FLUX_GITOPS_TOKEN || secrets.GITHUB_TOKEN }}
+          path: gitops-repo
+
+      - name: Update Flux-tracked AKS manifest in GitOps repo
+        if: >-
+          steps.deploy_config.outputs.enabled == 'true' &&
+          steps.deploy_config.outputs.deploy_target == 'aks' &&
+          steps.deploy_config.outputs.deploy_mode == 'flux'
+        shell: bash
+        env:
+          TARGET_ENVIRONMENT: production
+          AKS_FLUX_GITOPS_REPOSITORY: ${{ vars.AKS_FLUX_GITOPS_REPOSITORY }}
+          AKS_FLUX_GITOPS_BRANCH: ${{ vars.AKS_FLUX_GITOPS_BRANCH }}
+          AKS_FLUX_MANIFEST_PATH: ${{ vars.AKS_FLUX_MANIFEST_PATH }}
+          AKS_FLUX_IMAGE_REPOSITORY: ${{ vars.AKS_FLUX_IMAGE_REPOSITORY }}
+          AKS_FLUX_COMMIT_USER_NAME: ${{ vars.AKS_FLUX_COMMIT_USER_NAME }}
+          AKS_FLUX_COMMIT_USER_EMAIL: ${{ vars.AKS_FLUX_COMMIT_USER_EMAIL }}
+          VERIFIED_IMAGE_WITH_DIGEST: ${{ needs.verify-image-signature.outputs.image-with-digest }}
+        run: |
+          branch="${AKS_FLUX_GITOPS_BRANCH:-main}"
+          manifest_path="gitops-repo/${AKS_FLUX_MANIFEST_PATH}"
+
+          if [[ ! -f "$manifest_path" ]]; then
+            echo "::error::AKS_FLUX_MANIFEST_PATH '$AKS_FLUX_MANIFEST_PATH' does not exist in GitOps repository '$AKS_FLUX_GITOPS_REPOSITORY'."
+            exit 1
+          fi
+
+          temp_file="$(mktemp)"
+          if ! awk -v repo="$AKS_FLUX_IMAGE_REPOSITORY" -v image="$VERIFIED_IMAGE_WITH_DIGEST" '
+            BEGIN { updated = 0 }
+            {
+              if ($0 ~ /^[[:space:]]*image:[[:space:]]*/) {
+                line = $0
+                sub(/^[[:space:]]*image:[[:space:]]*/, "", line)
+                gsub(/"/, "", line)
+                if (index(line, repo) == 1 && updated == 0) {
+                  sub(/image:[[:space:]].*/, "image: " image)
+                  updated = 1
+                }
+              }
+              print
+            }
+            END {
+              if (updated == 0) {
+                exit 2
+              }
+            }
+          ' "$manifest_path" > "$temp_file"; then
+            status=$?
+            rm -f "$temp_file"
+            if [[ $status -eq 2 ]]; then
+              echo "::error::No matching image line starting with '$AKS_FLUX_IMAGE_REPOSITORY' was found in '$AKS_FLUX_MANIFEST_PATH' inside '$AKS_FLUX_GITOPS_REPOSITORY'."
+            fi
+            exit $status
+          fi
+
+          mv "$temp_file" "$manifest_path"
+
+          cd gitops-repo
+
+          if git diff --quiet -- "$AKS_FLUX_MANIFEST_PATH"; then
+            echo "No manifest changes detected; desired image already present."
+            exit 0
+          fi
+
+          git config user.name "${AKS_FLUX_COMMIT_USER_NAME:-github-actions[bot]}"
+          git config user.email "${AKS_FLUX_COMMIT_USER_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+          git add "$AKS_FLUX_MANIFEST_PATH"
+          git commit -m "chore: promote production AKS image"
+          git push origin "HEAD:${branch}"
+
+      - name: Resolve published production API URL
+        id: resolve_app_url
+        if: steps.deploy_config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          DEPLOY_TARGET: ${{ steps.deploy_config.outputs.deploy_target }}
+          TARGET_API_URL: ${{ vars.TARGET_API_URL }}
+          AKS_TARGET_API_URL: ${{ vars.AKS_TARGET_API_URL }}
+          CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          validate_safe_target_url() {
+            local url="$1"
+
+            if [[ ! "$url" =~ ^https?:// ]]; then
+              echo "::error::Target API URL must start with http:// or https://."
+              exit 1
+            fi
+
+            if [[ "$url" =~ ^https?://[^/]*@ ]]; then
+              echo "::error::Target API URL must not contain embedded credentials. Use a public endpoint without username or password in the URL."
+              exit 1
+            fi
+
+            if [[ "$url" == *\?* || "$url" == *\#* ]]; then
+              echo "::error::Target API URL must not contain query strings or fragments because workflow outputs and test artifacts would expose them."
+              exit 1
+            fi
+          }
+
+          if [[ "$DEPLOY_TARGET" == "aks" ]]; then
+            target_url="${AKS_TARGET_API_URL:-$TARGET_API_URL}"
+            if [[ -z "$target_url" ]]; then
+              echo "::error::Unable to resolve AKS production URL automatically. Set AKS_TARGET_API_URL or TARGET_API_URL for post-deploy validation."
+              exit 1
+            fi
+
+            validate_safe_target_url "$target_url"
+            echo "app_url=$target_url" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -n "$TARGET_API_URL" ]]; then
+            validate_safe_target_url "$TARGET_API_URL"
+            echo "app_url=$TARGET_API_URL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FQDN="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            -o tsv)"
+
+          if [[ -z "${FQDN}" ]]; then
+            echo "::error::Unable to resolve public Container App FQDN. Set TARGET_API_URL environment variable for post-deploy validation."
+            exit 1
+          fi
+
+          echo "app_url=https://${FQDN}" >> "$GITHUB_OUTPUT"
+
+  post-deploy-smoke-production:
+    name: "Stage 8: Production Smoke Test"
+    if: needs.deploy-production.result == 'success'
+    needs:
+      - deploy-production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Run smoke checks against production API
+        shell: bash
+        env:
+          TARGET_APP_URL: ${{ needs.deploy-production.outputs.app-url }}
+          API_TEST_PATH: ${{ vars.POST_DEPLOY_API_TEST_PATH }}
+          EXPECTED_MIN_ITEMS: ${{ vars.POST_DEPLOY_EXPECTED_MIN_ITEMS }}
+        run: |
+          base_url="${TARGET_APP_URL%/}"
+          api_path="${API_TEST_PATH:-/weatherforecast}"
+          expected_min_items="${EXPECTED_MIN_ITEMS:-1}"
+
+          if [[ "$api_path" != /* ]]; then
+            api_path="/${api_path}"
+          fi
+
+          mkdir -p smoke-evidence
+          target_url="${base_url}${api_path}"
+          status_code="$(curl \
+            --silent \
+            --show-error \
+            --location \
+            --header 'Accept: application/json' \
+            --dump-header smoke-evidence/headers.txt \
+            --output smoke-evidence/response.json \
+            --write-out '%{http_code}' \
+            "$target_url")"
+
+          if [[ "$status_code" != "200" ]]; then
+            echo "::error::Production smoke test failed for $target_url with HTTP $status_code."
+            exit 1
+          fi
+
+          if ! grep -qi '^content-type: .*application/json' smoke-evidence/headers.txt; then
+            echo "::error::Production smoke test expected application/json from $target_url."
+            exit 1
+          fi
+
+          jq -e --argjson expected_min_items "$expected_min_items" '
+            type == "array" and
+            length >= $expected_min_items and
+            all(
+              .[];
+              has("date") and
+              has("temperatureC") and
+              has("temperatureF") and
+              has("summary")
+            )
+          ' smoke-evidence/response.json > /dev/null
+
+      - name: Upload production smoke test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: post-deploy-smoke-production-report
+          path: smoke-evidence/**
+
+  post-deploy-k6-production:
+    name: "Stage 9: Production k6 Check"
+    if: needs.deploy-production.result == 'success'
+    needs:
+      - deploy-production
+      - post-deploy-smoke-production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1.2.1
+        with:
+          k6-version: "1.2.3"
+
+      - name: Run k6 production endpoint check
+        shell: bash
+        env:
+          BASE_URL: ${{ needs.deploy-production.outputs.app-url }}
+          API_PATH: ${{ vars.POST_DEPLOY_API_TEST_PATH }}
+          EXPECTED_MIN_ITEMS: ${{ vars.POST_DEPLOY_EXPECTED_MIN_ITEMS }}
+          K6_VUS: ${{ vars.K6_VUS }}
+          K6_DURATION: ${{ vars.K6_DURATION }}
+          K6_P95_MS: ${{ vars.K6_P95_MS }}
+        run: |
+          mkdir -p k6-evidence
+          k6 run \
+            --summary-export k6-evidence/summary.json \
+            tests/DevSecOpsPipelineSample.K6Tests/target-api-check.js | tee k6-evidence/output.txt
+
+      - name: Upload production k6 report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: post-deploy-k6-production-report
+          path: k6-evidence/**
+
+  zap-baseline-production:
+    name: "Stage 10: Production DAST - ZAP Baseline"
+    if: needs.deploy-production.result == 'success'
+    needs:
+      - deploy-production
+      - post-deploy-smoke-production
+      - post-deploy-k6-production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Run production ZAP baseline scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ needs.deploy-production.outputs.app-url }}
+          docker_name: ghcr.io/zaproxy/zaproxy:stable
+          cmd_options: -a
+          fail_action: true
+          allow_issue_writing: false
+          artifact_name: zap-baseline-production-report
+
   record-and-notify:
-    name: "Stage 5: Record & Notify"
+    name: "Stage 7: Record & Notify"
     if: always()
     runs-on: ubuntu-latest
     needs:
       - prepare-deployment
       - verify-image-signature
       - deploy
+      - post-deploy-smoke
+      - post-deploy-k6
       - zap-baseline
+      - deploy-production
+      - post-deploy-smoke-production
+      - post-deploy-k6-production
+      - zap-baseline-production
     permissions:
       contents: read
     steps:
@@ -269,16 +1046,62 @@ jobs:
           name: zap-baseline-report
           path: cd-evidence/zap-baseline
 
+      - name: Download smoke test report
+        if: always() && needs.post-deploy-smoke.result != 'skipped'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: post-deploy-smoke-report
+          path: cd-evidence/post-deploy-smoke
+
+      - name: Download k6 report
+        if: always() && needs.post-deploy-k6.result != 'skipped'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: post-deploy-k6-report
+          path: cd-evidence/post-deploy-k6
+
+      - name: Download production smoke test report
+        if: always() && needs.post-deploy-smoke-production.result != 'skipped'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: post-deploy-smoke-production-report
+          path: cd-evidence/post-deploy-smoke-production
+
+      - name: Download production k6 report
+        if: always() && needs.post-deploy-k6-production.result != 'skipped'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: post-deploy-k6-production-report
+          path: cd-evidence/post-deploy-k6-production
+
+      - name: Download production ZAP report
+        if: always() && needs.zap-baseline-production.result != 'skipped'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: zap-baseline-production-report
+          path: cd-evidence/zap-baseline-production
+
       - name: Create CD evidence summary
         shell: bash
         env:
           DEPLOY_ENABLED: ${{ needs.prepare-deployment.outputs.deploy-enabled }}
           DEPLOY_ENVIRONMENT: ${{ needs.prepare-deployment.outputs.target-environment }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
+          DEPLOY_TARGET: ${{ needs.deploy.outputs.deploy-target }}
+          DEPLOY_MODE: ${{ needs.deploy.outputs.deploy-mode }}
           VERIFY_IMAGE_SIGNATURE_RESULT: ${{ needs.verify-image-signature.result }}
+          POST_DEPLOY_SMOKE_RESULT: ${{ needs.post-deploy-smoke.result }}
+          POST_DEPLOY_K6_RESULT: ${{ needs.post-deploy-k6.result }}
           ZAP_BASELINE_RESULT: ${{ needs.zap-baseline.result }}
+          PRODUCTION_DEPLOY_RESULT: ${{ needs.deploy-production.result }}
+          PRODUCTION_DEPLOY_TARGET: ${{ needs.deploy-production.outputs.deploy-target }}
+          PRODUCTION_DEPLOY_MODE: ${{ needs.deploy-production.outputs.deploy-mode }}
+          PRODUCTION_POST_DEPLOY_SMOKE_RESULT: ${{ needs.post-deploy-smoke-production.result }}
+          PRODUCTION_POST_DEPLOY_K6_RESULT: ${{ needs.post-deploy-k6-production.result }}
+          PRODUCTION_ZAP_BASELINE_RESULT: ${{ needs.zap-baseline-production.result }}
           VERIFIED_IMAGE_WITH_DIGEST: ${{ needs.verify-image-signature.outputs.image-with-digest }}
           STAGED_APP_URL: ${{ needs.deploy.outputs.app-url }}
+          PRODUCTION_APP_URL: ${{ needs.deploy-production.outputs.app-url }}
         run: |
           mkdir -p cd-evidence
 
@@ -287,11 +1110,22 @@ jobs:
 
           - Deploy enabled: ${DEPLOY_ENABLED}
           - Environment: ${DEPLOY_ENVIRONMENT}
+          - Deploy target: ${DEPLOY_TARGET}
+          - Deploy mode: ${DEPLOY_MODE}
           - Signature verify: ${VERIFY_IMAGE_SIGNATURE_RESULT}
           - Deploy: ${DEPLOY_RESULT}
+          - Post-deploy smoke: ${POST_DEPLOY_SMOKE_RESULT}
+          - Post-deploy k6: ${POST_DEPLOY_K6_RESULT}
           - ZAP baseline: ${ZAP_BASELINE_RESULT}
           - Verified image digest ref: ${VERIFIED_IMAGE_WITH_DIGEST}
           - Staged app URL: ${STAGED_APP_URL}
+          - Production deploy: ${PRODUCTION_DEPLOY_RESULT}
+          - Production deploy target: ${PRODUCTION_DEPLOY_TARGET}
+          - Production deploy mode: ${PRODUCTION_DEPLOY_MODE}
+          - Production post-deploy smoke: ${PRODUCTION_POST_DEPLOY_SMOKE_RESULT}
+          - Production post-deploy k6: ${PRODUCTION_POST_DEPLOY_K6_RESULT}
+          - Production ZAP baseline: ${PRODUCTION_ZAP_BASELINE_RESULT}
+          - Production app URL: ${PRODUCTION_APP_URL}
           - Commit: ${GITHUB_SHA}
           - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF2
@@ -300,11 +1134,22 @@ jobs:
           {
             "deployEnabled": "${DEPLOY_ENABLED}",
             "environment": "${DEPLOY_ENVIRONMENT}",
+            "deployTarget": "${DEPLOY_TARGET}",
+            "deployMode": "${DEPLOY_MODE}",
             "verifyImageSignature": "${VERIFY_IMAGE_SIGNATURE_RESULT}",
             "deploy": "${DEPLOY_RESULT}",
+            "postDeploySmoke": "${POST_DEPLOY_SMOKE_RESULT}",
+            "postDeployK6": "${POST_DEPLOY_K6_RESULT}",
             "zapBaseline": "${ZAP_BASELINE_RESULT}",
+            "productionDeploy": "${PRODUCTION_DEPLOY_RESULT}",
+            "productionDeployTarget": "${PRODUCTION_DEPLOY_TARGET}",
+            "productionDeployMode": "${PRODUCTION_DEPLOY_MODE}",
+            "productionPostDeploySmoke": "${PRODUCTION_POST_DEPLOY_SMOKE_RESULT}",
+            "productionPostDeployK6": "${PRODUCTION_POST_DEPLOY_K6_RESULT}",
+            "productionZapBaseline": "${PRODUCTION_ZAP_BASELINE_RESULT}",
             "verifiedImageWithDigest": "${VERIFIED_IMAGE_WITH_DIGEST}",
             "stagedAppUrl": "${STAGED_APP_URL}",
+            "productionAppUrl": "${PRODUCTION_APP_URL}",
             "runUrl": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           }
           EOF2

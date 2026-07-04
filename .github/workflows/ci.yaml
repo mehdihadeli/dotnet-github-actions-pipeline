@@ -395,8 +395,8 @@ jobs:
 
   # =============================================================================
   # STAGE 3: BUILD AND TEST VALIDATION
-  # Confirm app still compiles and tests pass after the fast blocking quality and SAST checks.
-  # Sonar runs in parallel and is enforced later by the final security gate so test feedback arrives sooner.
+  # Confirm the app still compiles and both unit and end-to-end suites pass after SAST.
+  # The shared test action runs two solution-level passes filtered by xUnit v3 traits.
   # Pipeline tools: dotnet build/test, ReportGenerator coverage reports, Coveralls upload.
   # Local tools: dotnet build, dotnet test, coverage collection for fast regression checks.
   # =============================================================================
@@ -422,6 +422,9 @@ jobs:
       - name: Test solution
         uses: ./.github/actions/test
         with:
+          test-filter-queries: |
+            /[TestSuite=Unit]
+            /[TestSuite=EndToEnd]
           no-build: true
           skip-setup: true
           generate-coverage-report: true

@@ -28,9 +28,17 @@ Contains:
 - model types such as `WeatherForecast.cs`
 - environment-specific configuration in `appsettings*.json`
 
-### `tests/DevSecOpsPipelineSample.Api.Tests`
+### `tests/DevSecOpsPipelineSample.UnitTests`
 
-Contains automated tests for the API and validation helpers used by the sample pipeline.
+Contains isolated unit tests for controller and model behavior.
+
+### `tests/DevSecOpsPipelineSample.EndToEndTests`
+
+Contains hosted API tests that exercise routing, serialization, and environment-dependent runtime behavior.
+
+### `tests/DevSecOpsPipelineSample.K6Tests`
+
+Contains k6 scripts used by the CD workflow for post-deploy load and response validation.
 
 ## Composite action layer
 
@@ -66,9 +74,16 @@ Implements:
 
 - CI evidence intake
 - deploy-time signature verification
-- Azure Container Apps deployment
+- environment routing for `dev`, `staging`, and manual-gated `production`
+- post-deploy smoke and k6 checks
+- config-driven deployment to Azure Container Apps, AKS direct, or AKS plus Flux
 - ZAP baseline validation
 - deployment evidence generation
+
+Typical external paths referenced by `cd.yaml`:
+
+- `AKS_MANIFESTS_PATH`, for example `deploy/aks/base`, points to a manifest directory or file set used by `Azure/k8s-deploy`
+- `AKS_FLUX_MANIFEST_PATH`, for example `clusters/prod/apps/devsecops-api/deployment.yaml`, points to a manifest file inside the separate GitOps repository used by Flux mode
 
 ## Generated artifacts
 
