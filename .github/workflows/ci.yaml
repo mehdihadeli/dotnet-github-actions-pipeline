@@ -1191,7 +1191,8 @@ jobs:
           path: ci-evidence/**
 
       - name: Comment on pull request
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && hashFiles('ci-evidence/pipeline-summary.md') != ''
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
