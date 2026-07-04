@@ -1149,6 +1149,9 @@ jobs:
       contents: read
       issues: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
       - name: Download CI evidence artifacts
         if: always()
         uses: ./.github/actions/download-ci-evidence-artifacts
@@ -1195,6 +1198,15 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh api \
+          SUMMARY_FILE="ci-evidence/pipeline-summary.md"
+
+          if [[ ! -f "$SUMMARY_FILE" ]]; then
+            echo "::warning::Skipping PR comment because summary file was not generated."
+            exit 0
+          fi
+
+          if ! gh api \
             "repos/$REPOSITORY/issues/$PULL_REQUEST_NUMBER/comments" \
-            -f body="$(cat ci-evidence/pipeline-summary.md)"
+            -f body="$(cat "$SUMMARY_FILE")"; then
+            echo "::warning::Failed to post PR comment (likely token permission scope for this event)."
+          fi
