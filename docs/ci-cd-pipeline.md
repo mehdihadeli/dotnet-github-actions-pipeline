@@ -23,7 +23,6 @@ Markdown-only changes are excluded from CI path filters.
 ### Manual inputs
 
 - `sonar_enabled`: enable or disable Sonar for that run
-- `publish_image`: opt into image publish/sign/attest from manual CI runs
 
 ## CI stages
 
