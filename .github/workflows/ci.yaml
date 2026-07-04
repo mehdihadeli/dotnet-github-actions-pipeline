@@ -479,6 +479,15 @@ jobs:
           -o artifacts/publish
           --no-restore
 
+      - name: Generate app SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: artifacts/publish
+          format: cyclonedx-json
+          output-file: artifacts/sbom/app/bom.json
+          artifact-name: app-sbom.json
+          upload-artifact: false
+
       - name: Sign app SBOM
         if: github.event_name != 'pull_request'
         uses: ./.github/actions/sign-keyless-blob
@@ -518,7 +527,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Upload Trivy app SARIF
-        if: always()
+        if: always() && hashFiles('artifacts/security/trivy-app.sarif') != ''
         uses: ./.github/actions/upload-sarif
         with:
           sarif-file: artifacts/security/trivy-app.sarif
