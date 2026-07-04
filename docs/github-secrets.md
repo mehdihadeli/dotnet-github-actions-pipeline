@@ -320,7 +320,6 @@ Suggested environment usage:
 `ci.yaml` supports these `workflow_dispatch` inputs:
 
 - `sonar_enabled`: defaults to `true`
-- `publish_image`: defaults to `false` and only controls signing/attestation on manual CI runs
 
 ## Configuration matrix
 

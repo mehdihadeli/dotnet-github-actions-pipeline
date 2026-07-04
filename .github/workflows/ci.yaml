@@ -35,11 +35,6 @@ on:
         type: boolean
         required: true
         default: true
-      publish_image:
-        description: Whether to sign and attest the published container image.
-        type: boolean
-        required: true
-        default: false
 
 permissions: {}
 
@@ -1049,7 +1044,6 @@ jobs:
 
   image-sign:
     name: "Stage 8: Sign Image"
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-publish
     runs-on: ubuntu-latest
@@ -1087,7 +1081,6 @@ jobs:
 
   verify-image-signature:
     name: "Stage 8: Verify Image Signature"
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-sign
     outputs:
@@ -1115,7 +1108,6 @@ jobs:
 
   attest:
     name: "Stage 8: Attest Image"
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - image-sign
     runs-on: ubuntu-latest
