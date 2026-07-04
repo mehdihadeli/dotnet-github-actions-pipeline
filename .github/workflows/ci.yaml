@@ -36,7 +36,7 @@ on:
         required: true
         default: true
       publish_image:
-        description: Whether to publish container image.
+        description: Whether to sign and attest the published container image.
         type: boolean
         required: true
         default: false
@@ -990,12 +990,11 @@ jobs:
   # =============================================================================
   image-publish:
     name: "Stage 8: Publish Image"
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_image) || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     needs:
       - security-gate
       - image-sca-security
     outputs:
-      image-ref: ${{ needs.image-sca-security.outputs.image-ref }}
+      image-ref: ${{ steps.version_meta.outputs.image_ref }}
       image-digest: ${{ steps.build_and_push.outputs.digest }}
     runs-on: ubuntu-latest
     permissions:
@@ -1004,6 +1003,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Resolve shared version metadata
+        id: version_meta
+        uses: ./.github/actions/resolve-version-metadata
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
@@ -1019,9 +1022,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.image-sca-security.outputs.image-name }}
+          images: ${{ env.REGISTRY }}/${{ steps.version_meta.outputs.image_name }}
           tags: |
-            type=raw,value=${{ needs.image-sca-security.outputs.image-tag }}
+            type=raw,value=${{ steps.version_meta.outputs.image_tag }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -1041,7 +1044,7 @@ jobs:
       - name: Summarize published image
         uses: ./.github/actions/summarize-published-image
         with:
-          image-ref: ${{ needs.image-sca-security.outputs.image-ref }}
+          image-ref: ${{ steps.version_meta.outputs.image_ref }}
           image-digest: ${{ steps.build_and_push.outputs.digest }}
 
   image-sign:
@@ -1168,7 +1171,7 @@ jobs:
       - name: Create CI evidence summary
         uses: ./.github/actions/create-ci-evidence
         with:
-          build-version: ${{ needs.image-sca-security.outputs.image-tag || steps.version_meta.outputs.build_version }}
+          build-version: ${{ steps.version_meta.outputs.build_version }}
           security-gate-status: ${{ needs.security-gate.outputs.gate-status || 'SKIPPED' }}
           sonar-result: ${{ needs.sast-sonar.result }}
           build-and-test-result: ${{ needs.dotnet-build-test.result }}

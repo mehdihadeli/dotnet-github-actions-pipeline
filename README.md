@@ -100,7 +100,7 @@ docker build -t devsecops-pipeline-sample .
 ### 3. Run CI and CD
 
 - Push a branch or open a pull request to run CI automatically
-- Use `workflow_dispatch` when you want to override `sonar_enabled` or opt into `publish_image`
+- Use `workflow_dispatch` when you want to override `sonar_enabled` or opt into image signing and attestation
 - Merges to `main` emit CI evidence for `dev` deployment
 - Tags emit CI evidence for `staging` deployment
 - Let `cd.yaml` promote only successful CI runs that emitted valid `ci-evidence`
@@ -245,7 +245,7 @@ security-model:
 ### Optional manual workflow inputs
 
 - `sonar_enabled` to disable Sonar only for one manual run
-- `publish_image` to opt into publish, sign, and attest from a manual CI run
+- `publish_image` to opt into sign and attest from a manual CI run after the image is published
 
 ### Deployment target settings
 
@@ -555,7 +555,7 @@ docker build -t devsecops-pipeline-sample .
 
 ```text
 Push or Pull Request -> run CI automatically
-Actions -> CI -> Run workflow -> optional sonar_enabled or publish_image override
+Actions -> CI -> Run workflow -> optional sonar_enabled or publish_image override for signing/attestation
 Successful CI with evidence -> triggers CD workflow_run path
 Environment config chooses aca, aks/direct, or aks/flux deployment behavior
 ```

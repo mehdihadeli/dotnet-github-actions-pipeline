@@ -84,9 +84,9 @@ Snyk overlay scans and monitor steps are optional by design.
 
 Expected behavior:
 
-- publish is optional
-- manual runs require `publish_image=true`
-- branch and tag policy still controls when publish is allowed
+- publish runs after the security gate passes
+- manual runs require `publish_image=true` only for sign and attest
+- skipped publish now usually means an upstream dependency failed or was skipped
 
 ## CD issues
 
